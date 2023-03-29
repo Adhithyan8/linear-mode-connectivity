@@ -78,7 +78,7 @@ for dataset in datasets:
                 train_loader,
                 test_loader,
                 name=f"{dataset}_model{i}_model{j}_unscaled_perm",
-                save = True
+                save=True,
             )
 
             # rescale the models
@@ -92,7 +92,7 @@ for dataset in datasets:
                 train_loader,
                 test_loader,
                 name=f"{dataset}_model{i}_model{j}_rescaled_naive",
-                save = False
+                save=False,
             )
 
             # align the rescaled models
@@ -111,7 +111,7 @@ for dataset in datasets:
                 train_loader,
                 test_loader,
                 name=f"{dataset}_model{i}_model{j}_rescaled_perm",
-                save = True
+                save=True,
             )
 
     # visualize loss statistics and save plot
@@ -120,5 +120,6 @@ for dataset in datasets:
         barriers_unscaled_perm,
         barriers_rescaled_naive,
         barriers_rescaled_perm,
+        num_models=num_models,
         dataset=dataset,
     )

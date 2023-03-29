@@ -436,6 +436,7 @@ def plot_loss_stats(
     barriers_unscaled_perm,
     barriers_rescaled_naive,
     barriers_rescaled_perm,
+    num_models,
     dataset,
 ):
     # get the keys
@@ -462,8 +463,8 @@ def plot_loss_stats(
     for i in range(4):
         for j in range(2):
             # create a matrix of the stat
-            mat = np.zeros((5, 5))
-            for m in range(10):
+            mat = np.zeros((num_models, num_models))
+            for m in range(int(0.5 * (num_models * (num_models - 1)))):
                 mat[keys[m]] = stats[i][keys[m]][f"{data[j]}"]
 
             # make lower including diagonal as True
