@@ -475,7 +475,7 @@ def plot_loss_stats(
             sns.heatmap(
                 mat,
                 mask=mask,
-                annot=True,
+                annot=False,
                 fmt=".2f",
                 vmin=0,
                 vmax=4,
