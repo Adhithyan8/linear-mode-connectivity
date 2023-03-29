@@ -378,27 +378,28 @@ def plot_results(
                 i += 1
                 j = 0
 
-            # plot the loss, connect the markers, and set the color
-            axes[0, 0].plot(alphas, train_losses, color="C0", marker="o", linestyle="-")
-            axes[0, 0].plot(alphas, test_losses, color="C1", marker="o", linestyle="--")
+    if save == True:
+        # plot the loss, connect the markers, and set the color
+        axes[0, 0].plot(alphas, train_losses, color="C0", marker="o", linestyle="-")
+        axes[0, 0].plot(alphas, test_losses, color="C1", marker="o", linestyle="--")
 
-            # set the labels
-            axes[0, 0].set_xlabel(r"$\alpha$")
-            axes[0, 0].set_ylabel("Loss")
-            axes[0, 0].set_title("Loss Curves")
+        # set the labels
+        axes[0, 0].set_xlabel(r"$\alpha$")
+        axes[0, 0].set_ylabel("Loss")
+        axes[0, 0].set_title("Loss Curves")
 
-            # set the legend
-            axes[0, 0].legend(["Train", "Test"])
+        # set the legend
+        axes[0, 0].legend(["Train", "Test"])
 
-            # set the axis limits
-            axes[0, 0].set_xlim(0, 1)
-            axes[0, 0].set_ylim(0, 4)
+        # set the axis limits
+        axes[0, 0].set_xlim(0, 1)
+        axes[0, 0].set_ylim(0, 4)
 
-            # main title
-            fig.suptitle(f"Interpolation: {name}")
+        # main title
+        fig.suptitle(f"Interpolation: {name}")
 
-            # save the plot
-            plt.savefig("plots/{}.png".format(name))
+        # save the plot
+        plt.savefig("plots/{}.png".format(name))
 
     # close the plot
     plt.close()
