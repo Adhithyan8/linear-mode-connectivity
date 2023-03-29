@@ -42,23 +42,24 @@ for dataset in datasets:
         )
         models.append(model)
 
-    loss_statistics_unscaled_naive = dict()
-    loss_statistics_unscaled_perm = dict()
-    loss_statistics_rescaled_naive = dict()
-    loss_statistics_rescaled_perm = dict()
+    barriers_unscaled_naive = dict()
+    barriers_unscaled_perm = dict()
+    barriers_rescaled_naive = dict()
+    barriers_rescaled_perm = dict()
 
     for i in range(num_models):
         for j in range(i + 1, num_models):
             models[i].eval().to(device)
             models[j].eval().to(device)
 
-            # store the loss statistics
-            loss_statistics_unscaled_naive[(i, j)] = plot_results(
+            # store the loss barriers
+            barriers_unscaled_naive[(i, j)] = plot_results(
                 models[i],
                 models[j],
                 train_loader,
                 test_loader,
                 name=f"{dataset}_model{i}_model{j}_unscaled_naive",
+                save=False,
             )
 
             # align the models
@@ -70,26 +71,28 @@ for dataset in datasets:
                 f"models/pi_model{i}_model{j}_w{width}_d{depth}_{dataset}_unscaled.pth",
             )
 
-            # store the loss statistics
-            loss_statistics_unscaled_perm[(i, j)] = plot_results(
+            # store the loss barriers
+            barriers_unscaled_perm[(i, j)] = plot_results(
                 pi_model,
                 models[j],
                 train_loader,
                 test_loader,
                 name=f"{dataset}_model{i}_model{j}_unscaled_perm",
+                save = True
             )
 
             # rescale the models
             modeli_rescaled = normalize_weights(models[i])
             modelj_rescaled = normalize_weights(models[j])
 
-            # store the loss statistics
-            loss_statistics_rescaled_naive[(i, j)] = plot_results(
+            # store the loss barriers
+            barriers_rescaled_naive[(i, j)] = plot_results(
                 modeli_rescaled,
                 modelj_rescaled,
                 train_loader,
                 test_loader,
                 name=f"{dataset}_model{i}_model{j}_rescaled_naive",
+                save = False
             )
 
             # align the rescaled models
@@ -101,20 +104,21 @@ for dataset in datasets:
                 f"models/pi_model{i}_model{j}_w{width}_d{depth}_{dataset}_rescaled.pth",
             )
 
-            # store the loss statistics
-            loss_statistics_rescaled_perm[(i, j)] = plot_results(
+            # store the loss barriers
+            barriers_rescaled_perm[(i, j)] = plot_results(
                 pi_model,
                 modelj_rescaled,
                 train_loader,
                 test_loader,
                 name=f"{dataset}_model{i}_model{j}_rescaled_perm",
+                save = True
             )
 
     # visualize loss statistics and save plot
     plot_loss_stats(
-        loss_statistics_unscaled_naive,
-        loss_statistics_unscaled_perm,
-        loss_statistics_rescaled_naive,
-        loss_statistics_rescaled_perm,
+        barriers_unscaled_naive,
+        barriers_unscaled_perm,
+        barriers_rescaled_naive,
+        barriers_rescaled_perm,
         dataset=dataset,
     )

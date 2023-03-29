@@ -276,7 +276,9 @@ def compute_loss(model, loader):
 
 # plot results - get both loss curves and decision boundaries in one plot
 # as 3x4 grid, with 1 subplot for loss curves and others for decision boundaries
-def plot_results(model1, model2, train_loader, test_loader, name, num_points=11):
+def plot_results(
+    model1, model2, train_loader, test_loader, name, num_points=11, save=False
+):
     """
     Plot results - get both loss curves and decision boundaries in one plot
     as 3x4 grid, with 1 subplot for loss curves and others for decision boundaries
@@ -288,22 +290,15 @@ def plot_results(model1, model2, train_loader, test_loader, name, num_points=11)
     # create a new state dict
     new_state_dict = OrderedDict()
 
-    # create a figure
-    fig, axes = plt.subplots(3, 4, figsize=(20, 15))
-
     alphas = np.linspace(0, 1, num_points)
     train_losses = []
     test_losses = []
 
-    # get the limits of grid from the data
-    X, y = next(iter(test_loader))
-    x_min, x_max = X[:, 0].min() - 0.1, X[:, 0].max() + 0.1
-    y_min, y_max = X[:, 1].min() - 0.1, X[:, 1].max() + 0.1
-
-    # create a grid of points
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100), np.linspace(y_min, y_max, 100))
+    # create a figure
+    fig, axes = plt.subplots(3, 4, figsize=(20, 15))
 
     i, j = 0, 1
+
     # for each alpha
     for alpha in alphas:
         # interpolate the weights and biases
@@ -324,135 +319,129 @@ def plot_results(model1, model2, train_loader, test_loader, name, num_points=11)
         train_losses.append(train_loss)
         test_losses.append(test_loss)
 
-        # model is trained with softmax, so apply to output and plot contours of probabilities
-        Z = F.softmax(
-            new_model(torch.Tensor(np.c_[xx.ravel(), yy.ravel()]).to(device)), dim=1
-        )
+        if save == True:
+            # get the limits of grid from the data
+            X, y = next(iter(test_loader))
+            x_min, x_max = X[:, 0].min() - 0.1, X[:, 0].max() + 0.1
+            y_min, y_max = X[:, 1].min() - 0.1, X[:, 1].max() + 0.1
 
-        # plot the contours in pleasant grey scale
-        Z = Z[:, 1].cpu().detach().numpy()
-        Z = Z.reshape(xx.shape)
-        axes[i, j].contourf(xx, yy, Z, cmap=plt.cm.Greys)
-
-        # plot the data
-        for k in range(2):
-            axes[i, j].scatter(
-                X[y == k, 0].cpu().detach().numpy(),
-                X[y == k, 1].cpu().detach().numpy(),
-                c="C{}".format(k),
-                alpha=0.5,
+            # create a grid of points
+            xx, yy = np.meshgrid(
+                np.linspace(x_min, x_max, 100), np.linspace(y_min, y_max, 100)
             )
 
-        # if model has only one hidden layer, plot each neuron in different color
-        if len(new_model.layers) == 2:
-            # get the weights and biases
-            w = new_model.layers[0].weight.cpu().detach().numpy()
-            b = new_model.layers[0].bias.cpu().detach().numpy()
+            # model is trained with softmax, so apply to output and plot contours of probabilities
+            Z = F.softmax(
+                new_model(torch.Tensor(np.c_[xx.ravel(), yy.ravel()]).to(device)), dim=1
+            )
 
-            # for each neuron
-            for k in range(w.shape[0]):
-                # plot the line for the neuron in different color
-                axes[i, j].plot(
-                    np.linspace(x_min, x_max, 100),
-                    -(w[k, 0] * np.linspace(x_min, x_max, 100) + b[k]) / w[k, 1],
-                    color="C{}".format(k + 2),
-                    linestyle="--",
+            # plot the contours in pleasant grey scale
+            Z = Z[:, 1].cpu().detach().numpy()
+            Z = Z.reshape(xx.shape)
+            axes[i, j].contourf(xx, yy, Z, cmap=plt.cm.Greys)
+
+            # plot the data
+            for k in range(2):
+                axes[i, j].scatter(
+                    X[y == k, 0].cpu().detach().numpy(),
+                    X[y == k, 1].cpu().detach().numpy(),
+                    c="C{}".format(k),
+                    alpha=0.5,
                 )
 
-        # set the title (alpha upto 1 decimal place)
-        axes[i, j].set_title(r"$\alpha$ = {:.1f}".format(alpha))
+            # if model has only one hidden layer, plot each neuron in different color
+            if len(new_model.layers) == 2:
+                # get the weights and biases
+                w = new_model.layers[0].weight.cpu().detach().numpy()
+                b = new_model.layers[0].bias.cpu().detach().numpy()
 
-        # set axis limits
-        axes[i, j].set_xlim(x_min, x_max)
-        axes[i, j].set_ylim(y_min, y_max)
+                # for each neuron
+                for k in range(w.shape[0]):
+                    # plot the line for the neuron in different color
+                    axes[i, j].plot(
+                        np.linspace(x_min, x_max, 100),
+                        -(w[k, 0] * np.linspace(x_min, x_max, 100) + b[k]) / w[k, 1],
+                        color="C{}".format(k + 2),
+                        linestyle="--",
+                    )
 
-        # increment the indices
-        j += 1
-        if j == 4:
-            i += 1
-            j = 0
+            # set the title (alpha upto 1 decimal place)
+            axes[i, j].set_title(r"$\alpha$ = {:.1f}".format(alpha))
 
-    # plot the loss, connect the markers, and set the color
-    axes[0, 0].plot(alphas, train_losses, color="C0", marker="o", linestyle="-")
-    axes[0, 0].plot(alphas, test_losses, color="C1", marker="o", linestyle="--")
+            # set axis limits
+            axes[i, j].set_xlim(x_min, x_max)
+            axes[i, j].set_ylim(y_min, y_max)
 
-    # set the labels
-    axes[0, 0].set_xlabel(r"$\alpha$")
-    axes[0, 0].set_ylabel("Loss")
-    axes[0, 0].set_title("Loss Curves")
+            # increment the indices
+            j += 1
+            if j == 4:
+                i += 1
+                j = 0
 
-    # set the legend
-    axes[0, 0].legend(["Train", "Test"])
+            # plot the loss, connect the markers, and set the color
+            axes[0, 0].plot(alphas, train_losses, color="C0", marker="o", linestyle="-")
+            axes[0, 0].plot(alphas, test_losses, color="C1", marker="o", linestyle="--")
 
-    # set the axis limits
-    axes[0, 0].set_xlim(0, 1)
-    axes[0, 0].set_ylim(0, 4)
+            # set the labels
+            axes[0, 0].set_xlabel(r"$\alpha$")
+            axes[0, 0].set_ylabel("Loss")
+            axes[0, 0].set_title("Loss Curves")
 
-    # main title
-    fig.suptitle(f"Interpolation: {name}")
+            # set the legend
+            axes[0, 0].legend(["Train", "Test"])
 
-    # save the plot
-    plt.savefig("plots/{}.png".format(name))
+            # set the axis limits
+            axes[0, 0].set_xlim(0, 1)
+            axes[0, 0].set_ylim(0, 4)
+
+            # main title
+            fig.suptitle(f"Interpolation: {name}")
+
+            # save the plot
+            plt.savefig("plots/{}.png".format(name))
 
     # close the plot
     plt.close()
 
     # loss statistics
-    stats = loss_stats(train_losses, test_losses)
+    barriers = loss_barriers(train_losses, test_losses)
 
     # return the stats
-    return stats
+    return barriers
 
 
 # loss statistics
-def loss_stats(train_losses, test_losses):
-    stats = OrderedDict()
-
-    # get the minimum loss
-    stats["min_train"] = min(train_losses)
-    stats["min_test"] = min(test_losses)
-
-    # get the maximum loss
-    stats["max_train"] = max(train_losses)
-    stats["max_test"] = max(test_losses)
-
-    # get the average loss
-    stats["avg_train"] = sum(train_losses) / len(train_losses)
-    stats["avg_test"] = sum(test_losses) / len(test_losses)
-
-    # get eps connectivity (max loss - max of end points)
-    stats["eps_train"] = stats["max_train"] - max(train_losses[0], train_losses[-1])
-    stats["eps_test"] = stats["max_test"] - max(test_losses[0], test_losses[-1])
+def loss_barriers(train_losses, test_losses):
+    barriers = OrderedDict()
 
     # get loss barrier
     # subtract linear interpolation of end points from losses
     # and get the max of the resulting array
-    stats["barrier_train"] = max(
+    barriers["train"] = max(
         train_losses - np.linspace(train_losses[0], train_losses[-1], len(train_losses))
     )
-    stats["barrier_test"] = max(
+    barriers["test"] = max(
         test_losses - np.linspace(test_losses[0], test_losses[-1], len(test_losses))
     )
 
-    return stats
+    return barriers
 
 
 # plot the loss statistics
 # given four dictionaries of stats with keys as tuple (i,j)
-# save 5 figures of 2x4 grid of plots,
-# each containing heatmaps of minimum, maximum loss, avg loss, eps connectivity, and loss barrier
+# save figure of 2x4 grid of plots,
+# each containing heatmap loss barrier
 def plot_loss_stats(
-    stats_unscaled_naive,
-    stats_unscaled_perm,
-    stats_rescaled_naive,
-    stats_rescaled_perm,
+    barriers_unscaled_naive,
+    barriers_unscaled_perm,
+    barriers_rescaled_naive,
+    barriers_rescaled_perm,
     dataset,
 ):
     # get the keys
-    keys = list(stats_unscaled_naive.keys())
+    keys = list(barriers_unscaled_naive.keys())
 
     # get the names of the stats
-    names = ["min", "max", "avg", "eps", "barrier"]
     data = ["train", "test"]
 
     # get the names of the models
@@ -460,60 +449,57 @@ def plot_loss_stats(
 
     # get the stats
     stats = [
-        stats_unscaled_naive,
-        stats_unscaled_perm,
-        stats_rescaled_naive,
-        stats_rescaled_perm,
+        barriers_unscaled_naive,
+        barriers_unscaled_perm,
+        barriers_rescaled_naive,
+        barriers_rescaled_perm,
     ]
 
-    # for each stat
-    for k in range(5):
-        # create a figure
-        fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    # create a figure
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
 
-        # for each model
-        for i in range(4):
-            for j in range(2):
-                # create a matrix of the stat
-                mat = np.zeros((5, 5))
-                for m in range(10):
-                    mat[keys[m]] = stats[i][keys[m]][f"{names[k]}_{data[j]}"]
+    # for each model
+    for i in range(4):
+        for j in range(2):
+            # create a matrix of the stat
+            mat = np.zeros((5, 5))
+            for m in range(10):
+                mat[keys[m]] = stats[i][keys[m]][f"{data[j]}"]
 
-                # make lower including diagonal as True
-                mask = np.tril(np.ones_like(mat, dtype=np.bool))
+            # make lower including diagonal as True
+            mask = np.tril(np.ones_like(mat, dtype=np.bool))
 
-                # plot the heatmap with annotations
-                sns.heatmap(
-                    mat,
-                    mask=mask,
-                    annot=True,
-                    fmt=".2f",
-                    vmin=0,
-                    vmax=4,
-                    cmap="Blues",
-                    ax=axes[j, i],
-                    cbar=True,
-                )
+            # plot the heatmap with annotations
+            sns.heatmap(
+                mat,
+                mask=mask,
+                annot=True,
+                fmt=".2f",
+                vmin=0,
+                vmax=4,
+                cmap="Blues",
+                ax=axes[j, i],
+                cbar=True,
+            )
 
-                # set the labels
-                axes[j, i].set_xlabel("i")
-                axes[j, i].set_ylabel("j")
+            # set the labels
+            axes[j, i].set_xlabel("i")
+            axes[j, i].set_ylabel("j")
 
-                # set the title
-                axes[j, i].set_title(f"{model_names[i]}: {data[j]}")
+            # set the title
+            axes[j, i].set_title(f"{model_names[i]}: {data[j]}")
 
-                if names[k] == "barrier":
-                    # make mat symmetric with diagonal as 0
-                    mat = mat + mat.T - np.diag(np.diag(mat))
+            # make mat symmetric with diagonal as 0
+            mat = mat + mat.T - np.diag(np.diag(mat))
 
-                    # save the matrix
-                    np.save(f"barriers/{dataset}_{model_names[i]}_{data[j]}", mat)
+            # save the matrix
+            np.save(f"barriers/{dataset}_{model_names[i]}_{data[j]}", mat)
 
-        # main title
-        fig.suptitle(f"{names[k]} Loss")
+    # main title
+    fig.suptitle(f"Loss Barriers: {dataset}")
 
-        # save the plot
-        plt.savefig(f"plots/{dataset}_{names[k]}.png")
+    # save the plot
+    plt.savefig(f"plots/{dataset}_loss_barriers.png")
 
-        # close the plot
-        plt.close()
+    # close the plot
+    plt.close()
