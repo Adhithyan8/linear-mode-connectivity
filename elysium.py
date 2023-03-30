@@ -15,7 +15,7 @@ for dataset in datasets:
     train_loader, test_loader = get_data(name=dataset)
 
     # config
-    num_models = 5
+    num_models = 20
     width = 6
     depth = 1
     epochs = 100
