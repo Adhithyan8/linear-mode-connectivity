@@ -14,6 +14,7 @@ from sklearn.datasets import (
     make_gaussian_quantiles,
     make_moons,
 )
+from sklearn.manifold import MDS
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
