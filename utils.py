@@ -27,13 +27,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Choose the dataset
 # Options: MNIST, CIFAR10, BLOBS, MOONS, GAUSSIAN, CLASSIFICATION
-def get_data(name: str = "BLOBS") -> tuple:
+def get_data(name: str = "blobs", n_samples=512) -> tuple:
     """
     Get the data loaders for the dataset
     :param name: name of the dataset
     :return: train_loader, test_loader
     """
-    if name == "MNIST":
+    if name == "mnist":
         # MNIST
         # normalize the data
         transform = transforms.Compose(
@@ -51,7 +51,7 @@ def get_data(name: str = "BLOBS") -> tuple:
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
         test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
-    elif name == "CIFAR10":
+    elif name == "cifar10":
         # CIFAR10
         # normalize the data
         transform = transforms.Compose(
@@ -74,17 +74,17 @@ def get_data(name: str = "BLOBS") -> tuple:
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
         test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
-    elif name == "BLOBS":
+    elif name == "blobs":
         # BLOBS
         # generate blobs dataset, split into train and test
         X, y = make_blobs(  # type: ignore
-            n_samples=1000,
+            n_samples=n_samples,
             centers=2,
             n_features=2,
             random_state=0,
             return_centers=False,
         )
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
 
         # make data loaders
         train_loader = DataLoader(
@@ -102,11 +102,11 @@ def get_data(name: str = "BLOBS") -> tuple:
             shuffle=False,
         )
 
-    elif name == "MOONS":
+    elif name == "moons":
         # MOONS
         # generate moons dataset, split into train and test
-        X, y = make_moons(n_samples=1000, noise=0.1, random_state=0)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        X, y = make_moons(n_samples=n_samples, noise=0.1, random_state=0)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
 
         # make data loaders
         train_loader = DataLoader(
@@ -124,13 +124,13 @@ def get_data(name: str = "BLOBS") -> tuple:
             shuffle=False,
         )
 
-    elif name == "GAUSSIAN":
+    elif name == "gaussian":
         # GAUSSIAN
         # generate gaussian dataset, split into train and test
         X, y = make_gaussian_quantiles(
-            n_samples=1000, n_features=2, n_classes=2, random_state=0
+            n_samples=n_samples, n_features=2, n_classes=2, random_state=0
         )
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
 
         # make data loaders
         train_loader = DataLoader(
@@ -148,17 +148,17 @@ def get_data(name: str = "BLOBS") -> tuple:
             shuffle=False,
         )
 
-    elif name == "CLASSIFICATION":
+    elif name == "classification":
         # CLASSIFICATION
         # generate classification dataset, split into train and test
         X, y = make_classification(
-            n_samples=1000,
+            n_samples=n_samples,
             n_features=2,
             n_redundant=0,
             n_informative=2,
             random_state=0,
         )
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
 
         # make data loaders
         train_loader = DataLoader(
@@ -586,3 +586,40 @@ def interactive_heatmap(path):
 
     # show the plot
     fig.show()
+
+
+# given 2 dictionaries of stats with keys as tuple (i,j)
+def save_loss_stats(
+    barriers_perm,
+    barriers_scale_perm,
+    num_models,
+    name,
+):
+    # get the keys
+    keys = list(barriers_perm.keys())
+
+    # get the names of the stats
+    data = ["train", "test"]
+
+    # get the names of the models
+    model_names = ["perm", "scale_perm"]
+
+    # get the stats
+    stats = [
+        barriers_perm,
+        barriers_scale_perm,
+    ]
+
+    # for each model
+    for i in range(2):
+        for j in range(2):
+            # create a matrix of the stat
+            mat = np.zeros((num_models, num_models))
+            for m in range(int(0.5 * (num_models * (num_models - 1)))):
+                mat[keys[m]] = stats[i][keys[m]][f"{data[j]}"]
+
+            # make mat symmetric with diagonal as 0
+            mat = mat + mat.T - np.diag(np.diag(mat))
+
+            # save the matrix
+            np.save(f"barriers/sigmoid/{name}_{model_names[i]}_{data[j]}", mat)

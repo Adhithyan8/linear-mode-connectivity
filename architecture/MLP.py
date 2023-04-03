@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.utils.tensorboard.writer import SummaryWriter
 
 # Define the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,7 +27,7 @@ class FCNet(nn.Module):
 # Define the training loop
 def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
     # Define the loss function
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
 
     # Define the optimizer
     optimizer_parameters = [
@@ -50,9 +49,6 @@ def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
         optimizer, max_lr=0.1, steps_per_epoch=len(train_loader), epochs=epochs
     )
 
-    # Define the tensorboard writer
-    writer = SummaryWriter(f"runs/{model_name}")
-
     # Train the model
     model.to(device)
     model.train()
@@ -69,11 +65,5 @@ def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
             optimizer.step()
             scheduler.step()
 
-        # Write the loss to tensorboard
-        writer.add_scalar("Loss/train", loss, epoch)
-
     # save the model
-    torch.save(model.state_dict(), f"models/{model_name}.pth")
-
-    # Close the tensorboard writer
-    writer.close()
+    torch.save(model.state_dict(), f"models/sigmoid/{model_name}.pth")
