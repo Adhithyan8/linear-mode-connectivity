@@ -1,13 +1,17 @@
 import copy
 from collections import OrderedDict
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.express as px
 import seaborn as sns
 import torch
 import torch.nn.functional as F
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from plotly import graph_objects as go
+from plotly.subplots import make_subplots
 from sklearn.datasets import (
     make_blobs,
     make_classification,
@@ -506,3 +510,79 @@ def plot_loss_stats(
 
     # close the plot
     plt.close()
+
+
+# using plotly open a heatmap and MDS plot side by side
+# given a path to the loss barrier matrix
+def interactive_heatmap(path):
+    # load the matrix
+    mat = np.load(path)
+
+    # make lower including diagonal as True
+    mask = np.tril(np.ones_like(mat, dtype=np.bool))
+
+    # create a figure
+    fig = make_subplots(rows=1, cols=2)
+
+    # plot the heatmap, hovering shows model pair and loss barrier
+    fig.add_trace(
+        go.Heatmap(
+            z=mat,
+            x=np.arange(mat.shape[0]),
+            y=np.arange(mat.shape[1]),
+            hoverongaps=False,
+            hovertemplate="(%{x}, %{y})<br>Loss Barrier: %{z}<extra></extra>",
+            colorscale="Blues",
+            showscale=False,
+        ),
+        row=1,
+        col=1,
+    )
+
+    # make MDS embedding
+    mds = MDS(
+        n_components=2,
+        random_state=0,
+        dissimilarity="precomputed",
+        normalized_stress="auto",
+    )
+
+    # get the MDS embedding
+    pos = mds.fit_transform(mat)
+
+    # plot the MDS plot, hovering shows model number
+    fig.add_trace(
+        go.Scatter(
+            x=pos[:, 0],
+            y=pos[:, 1],
+            mode="markers",
+            hovertemplate="Model: %{text}<extra></extra>",
+            text=np.arange(mat.shape[0]),
+        ),
+        row=1,
+        col=2,
+    )
+
+    # normalize the matrix
+    mat = (mat - np.min(mat)) / (np.max(mat) - np.min(mat))
+
+    # add lines with alpha = 0.2, color as normalized value in rgba format
+    for i in range(mat.shape[0]):
+        for j in range(mat.shape[1]):
+            fig.add_shape(
+                type="line",
+                x0=pos[i, 0],
+                y0=pos[i, 1],
+                x1=pos[j, 0],
+                y1=pos[j, 1],
+                # round to 2 decimal places
+                line=dict(color=f"rgba(0,0,255,{round(mat[i, j], 2) * 0.1})"),
+                row=1,
+                col=2,
+            )
+
+    # set the title
+    fig.update_layout(title_text="Loss Barrier")
+
+    # show the plot
+    fig.show()

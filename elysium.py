@@ -1,15 +1,23 @@
 import numpy as np
 import torch
+import os
 
 from architecture.MLP import FCNet, train
 from permute import permute_align
-from utils import get_data, normalize_weights, plot_loss_stats, plot_results
+from utils import (
+    get_data,
+    normalize_weights,
+    plot_loss_stats,
+    plot_results,
+    interactive_heatmap,
+)
 
 # Set the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 experiment = "embed"  # "permute" or "embed"
 
+# experiment 1: align models and plot loss barriers
 if experiment == "permute":
     # datasets
     datasets = ["BLOBS", "MOONS", "GAUSSIAN", "CLASSIFICATION"]
@@ -132,58 +140,14 @@ if experiment == "permute":
             dataset=dataset,
         )
 
-elif experiment == "barriers":
-    # # given a np array of barriers, plot the heatmap with plotly
-    # # if you hover over a cell, it will show the barrier value
-    # # if you click on a cell, it will open the corresponding plot
+# experiment 2: using loss barriers, embed models in 2D space
+elif experiment == "embed":
+    # get path of D:\03_KTH\Thesis\LMC\barriers\softmax\moons\scale_perm_train.npy
+    path = os.path.dirname(os.path.realpath(__file__))
+    path = os.path.join(path, "barriers", "softmax", "moons", "scale_perm_train.npy")
 
-    # # config
-    # dataset = "MOONS"
-    # scale = "Rescaled"
-    # perm = "Perm"
-    # data = "train"
-
-    # # load the barriers
-    # barriers = np.load(f"barriers/{dataset}_{scale} {perm}_{data}.npy")
-
-    # def plot_heatmap(barriers, dataset, scale, perm, data):
-    #     import plotly.graph_objects as go
-
-    #     fig = go.Figure(
-    #         data=go.Heatmap(
-    #             z=barriers,
-    #             x=[f"Model {i}" for i in range(barriers.shape[0])],
-    #             y=[f"Model {i}" for i in range(barriers.shape[1])],
-    #             hoverongaps=False,
-    #         )
-    #     )
-    #     fig.update_layout(
-    #         title=f"{dataset} {scale} {perm} {data}",
-    #         xaxis_nticks=36,
-    #     )
-
-    #     # hover text goes here
-    #     text = []
-    #     for i in range(barriers.shape[0]):
-    #         for j in range(barriers.shape[1]):
-    #             text.append(f"Barrier: {barriers[i, j]}")
-
-    #     fig.data[0].text = text
-    #     fig.data[0].hovertemplate = "%{text}<extra></extra>"
-
-    #     # click event goes here
-    #     fig.data[0].on_click(
-    #         lambda trace, points, state: webbrowser.open(
-    #             f"plots/{dataset}_{scale} {perm}_{data}_model{points.point_inds[0]}_model{points.point_inds[1]}.html"
-    #         )
-    #     )
-
-    #     fig.show()
-
-    # # plot the heatmap
-    # plot_heatmap(barriers, dataset, scale, perm, data)
-    print("PENDING")
-
+    # plot interactive heatmap
+    interactive_heatmap(path)
 
 else:
     raise ValueError("Experiment must be either 'permute' or 'embed'")
