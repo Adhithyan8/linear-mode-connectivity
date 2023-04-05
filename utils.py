@@ -268,12 +268,13 @@ def compute_loss(model, loader):
     loss = 0
     # for each batch
     for X, y in loader:
+        y = y.unsqueeze(1).float()
         # move the data to the device
         X = X.to(device)
         y = y.to(device)
 
         # compute the loss
-        loss += F.cross_entropy(model(X), y).item()
+        loss += F.binary_cross_entropy_with_logits(model(X), y).item()
 
     # return the loss
     return loss / len(loader)

@@ -290,7 +290,7 @@ def permute_align(model1, model2, data_loader, epochs, device):
     pi_model.to(device)
 
     # mid point loss Eq 7
-    criterion = RndLoss(model2, criterion=torch.nn.CrossEntropyLoss())
+    criterion = RndLoss(model2, criterion=torch.nn.BCEWithLogitsLoss())
 
     # optimizer
     optimizer = torch.optim.AdamW(pi_model.p.parameters(), lr=0.1)
@@ -299,6 +299,7 @@ def permute_align(model1, model2, data_loader, epochs, device):
         # training step
         pi_model.train()
         for x, y in data_loader:
+            y = y.unsqueeze(1).float()
             rebased_model = pi_model()
             loss = criterion(rebased_model, x.to(device), y.to(device))
 
@@ -308,6 +309,5 @@ def permute_align(model1, model2, data_loader, epochs, device):
 
     pi_model.eval()
     rebased_model = copy.deepcopy(pi_model())
-    
 
     return rebased_model

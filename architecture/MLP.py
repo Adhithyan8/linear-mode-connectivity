@@ -55,8 +55,10 @@ def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
     loss = 0.0
     for epoch in range(epochs):
         for x, y in train_loader:
-            optimizer.zero_grad()
+            # model has 1 output
+            y = y.unsqueeze(1).float()
             # Forward pass
+            optimizer.zero_grad()
             y_pred = model(x.to(device))
             loss = criterion(y_pred, y.to(device))
 
