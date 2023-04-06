@@ -27,6 +27,8 @@ if experiment == "permute":
     for dataset in datasets:
         for n_sample in n_samples:
             for n_width in n_widths:
+                # print the experiment
+                print(f"Dataset: {dataset}, n_samples: {n_sample}, width: {n_width}")
                 # Load the data
                 train_loader, test_loader = get_data(name=dataset, n_samples=n_sample)
 
@@ -114,13 +116,14 @@ if experiment == "permute":
                             save=False,
                         )
 
-                        # save loss statistics
-                        save_loss_stats(
-                            barriers_perm,
-                            barriers_scale_perm,
-                            num_models=num_models,
-                            name=f"{dataset}/s{n_sample}_w{width}",
-                        )
+                # save loss statistics
+                save_loss_stats(
+                    barriers_perm,
+                    barriers_scale_perm,
+                    num_models=num_models,
+                    name=f"{dataset}/s{n_sample}_w{width}",
+                )
+    print("Done!")
 
 # experiment 2: using loss barriers, embed models in 2D space
 elif experiment == "embed":
