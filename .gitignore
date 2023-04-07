@@ -3,3 +3,6 @@ __pycache__/
 .tmp.driveupload/
 .tmp.drivedownload/
 plots/
+barriers/
+models/
+runs/
