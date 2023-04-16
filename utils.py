@@ -250,7 +250,6 @@ def normalize_weights(model):
 
     # for the last layer, set the bias to have zero mean
     b = state_dict["layers.{}.bias".format(num_layers - 1)]
-    b = b - b.mean()
     new_state_dict["layers.{}.bias".format(num_layers - 1)] = b
 
     # load the new state dict into a new model
