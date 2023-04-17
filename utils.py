@@ -248,6 +248,8 @@ def evaluate(model, loader):
 
     # for each batch
     for X, y in loader:
+        y = y.unsqueeze(1).float()
+
         # move the data to the device
         X = X.to(device)
         y = y.to(device)
@@ -296,7 +298,7 @@ def interpolation_losses(model1, model2, loader, num_points=11):
         # store the loss
         losses[idx] = loss
 
-    return
+    return losses
 
 
 # given a np array of interpolation losses, return the loss barrier

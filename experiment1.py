@@ -33,7 +33,7 @@ for n_width in n_widths:
     logs = np.zeros((num_models, 4))
 
     # data structure to store interpolation losses
-    interpolation_losses = np.zeros((num_models, num_models))
+    int_losses = np.zeros((num_models, num_models, 11))
 
     # data structure to store loss barriers
     loss_barriers = np.zeros((num_models, num_models))
@@ -98,19 +98,19 @@ for n_width in n_widths:
             if i == j:
                 continue
             if i > j:
-                interpolation_losses[i, j] = interpolation_losses[j, i]
+                int_losses[i, j, :] = int_losses[j, i, :]
                 loss_barriers[i, j] = loss_barriers[j, i]
                 continue
             if i < j:
-                interpolation_losses[i, j] = interpolation_losses(
+                int_losses[i, j, :] = interpolation_losses(
                     models[i], models[j], train_loader
                 )
-                loss_barriers[i, j] = loss_barrier(interpolation_losses[i, j])
+                loss_barriers[i, j] = loss_barrier(int_losses[i, j, :])
 
     # save the interpolation losses
     np.save(
         f"logs/sigmoid/{datasets}/interpolation_losses_s{n_samples}_w{width}_d{depth}",
-        interpolation_losses,
+        int_losses,
     )
 
     # save the loss barriers
