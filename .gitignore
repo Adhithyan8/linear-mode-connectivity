@@ -6,3 +6,4 @@ models/
 lib/
 logs/
 *.html
+*.png
