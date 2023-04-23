@@ -257,8 +257,13 @@ def evaluate(model, loader):
         # compute the loss
         loss += F.binary_cross_entropy_with_logits(model(X), y).item()
 
-        # compute the accuracy
-        accuracy += (model(X).argmax(dim=1) == y).float().mean().item()
+        # compute the batchwise accuracy (sigmoid of logits)
+        accuracy += torch.mean(
+            torch.eq(
+                torch.round(torch.sigmoid(model(X))),
+                y,
+            ).float()
+        ).item()
 
     # return the loss and accuracy
     return loss / len(loader), accuracy / len(loader)

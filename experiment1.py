@@ -17,10 +17,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # datasets
 datasets = "gaussian"
 n_samples = 512
-n_widths = [3, 4, 5, 6, 12]
+# n_widths = [3, 4, 5, 6, 12]
+n_widths = [128, 256, 512]
 
 
-"""
 for n_width in n_widths:
     # Load the data
     train_loader, test_loader = get_data(name=datasets, n_samples=n_samples)
@@ -65,10 +65,10 @@ for n_width in n_widths:
         logs[i, 2] = train_acc
         logs[i, 3] = test_acc
 
-        # save the log
-        np.save(
-            f"logs/sigmoid/{datasets}/logs_s{n_samples}_w{width}_d{depth}_{i}", logs
-        )
+    # save the log
+    np.save(
+        f"logs/sigmoid/{datasets}/logs_s{n_samples}_w{width}_d{depth}_{i}", logs
+    )
 
     # pick index of model with lowest train loss as reference
     reference_model_idx = np.argmin(logs[:, 0])
@@ -120,8 +120,9 @@ for n_width in n_widths:
         f"logs/sigmoid/{datasets}/loss_barriers_s{n_samples}_w{width}_d{depth}",
         loss_barriers,
     )
-"""
 
+
+"""
 for n_width in n_widths:
     # Load the data
     train_loader, test_loader = get_data(name=datasets, n_samples=n_samples)
@@ -147,14 +148,14 @@ for n_width in n_widths:
         model = FCNet(input_size=2, width=width, depth=depth, output_size=1)
         model.load_state_dict(
             torch.load(
-                f"models/sigmoid/{datasets}/model_s{n_samples}_w{width}_d{depth}_{i}"
+                f"models/sigmoid/{datasets}/model_s{n_samples}_w{width}_d{depth}_{i}.pth"
             )
         )
         models.append(model)
 
         # compute train loss, test loss, train accuracy, test accuracy
         # log the results
-        model.eval()
+        model.eval().to(device)
 
         train_loss, train_acc = evaluate(model, train_loader)
         test_loss, test_acc = evaluate(model, test_loader)
@@ -191,3 +192,34 @@ for n_width in n_widths:
         f"logs/sigmoid/{datasets}/naive_loss_barriers_s{n_samples}_w{width}_d{depth}",
         loss_barriers,
     )
+"""
+
+"""
+# load interpolation losses and save the max as a numpy array
+for n_width in n_widths:
+    # config
+    num_models = 50
+    depth = 1
+
+    # load
+    int_losses = np.load(
+        f"logs/sigmoid/{datasets}/interpolation_losses_s{n_samples}_w{n_width}_d{depth}.npy"
+    )
+    naive_int_losses = np.load(
+        f"logs/sigmoid/{datasets}/naive_interpolation_losses_s{n_samples}_w{n_width}_d{depth}.npy"
+    )
+
+    # compute max along the third dimension
+    max_int_losses = np.max(int_losses, axis=2)
+    max_naive_int_losses = np.max(naive_int_losses, axis=2)
+
+    # save
+    np.save(
+        f"logs/sigmoid/{datasets}/max_interpolation_losses_s{n_samples}_w{n_width}_d{depth}",
+        max_int_losses,
+    )
+    np.save(
+        f"logs/sigmoid/{datasets}/naive_max_interpolation_losses_s{n_samples}_w{n_width}_d{depth}",
+        max_naive_int_losses,
+    )
+"""
