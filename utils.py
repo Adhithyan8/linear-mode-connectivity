@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from matplotlib import cm
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.datasets import (
@@ -315,12 +316,13 @@ def loss_barrier(losses):
 
 
 def plotter(model1, model2, average_model, width, loader, title):
-    # plot the decision boundaries of model1, model2 and the average model in 1*3 subplots
+    # plot the decision boundaries and neurons in 2*3 subplots
+    fig, axs = plt.subplots(2, 3)
+    fig.set_size_inches(15, 10)
 
-    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-    axs[0].set_title("model1")
-    axs[1].set_title("model2")
-    axs[2].set_title("average model")
+    axs[0, 0].set_title("model1")
+    axs[0, 1].set_title("model2")
+    axs[0, 2].set_title("average model")
 
     for i, model in enumerate([model1, model2, average_model]):
         model.eval().to(device)
@@ -338,24 +340,64 @@ def plotter(model1, model2, average_model, width, loader, title):
             w = model.layers[0].weight[j].detach().cpu().numpy()
             b = model.layers[0].bias[j].detach().cpu().numpy()
             z = -w[0] / w[1] * x1 - b / w[1]
-            axs[i].plot(x1, z, c=f"C{j}", linestyle="--", linewidth=1, alpha=0.2)
-
-        axs[i].contourf(x1, x2, y, 10, cmap="pink", alpha=0.8)
+            axs[0, i].plot(x1, z, c=f"C{j}", linestyle="--", linewidth=1, alpha=0.2)
+        axs[0, i].contourf(x1, x2, y, 10, cmap="pink", alpha=0.8)
         # display countour lines
-        axs[i].contour(x1, x2, y, 10, colors="k", linewidths=0.5, alpha=0.2)
+        axs[0, i].contour(x1, x2, y, 10, colors="k", linewidths=0.5, alpha=0.2)
         # highlight line at 0.5
-        axs[i].contour(x1, x2, y, levels=[0.5], colors="k", linewidths=2)
-        axs[i].set_aspect("equal")
-        axs[i].set_xlim(-3, 3)
-        axs[i].set_ylim(-3, 3)
+        axs[0, i].contour(x1, x2, y, levels=[0.5], colors="k", linewidths=2)
+        axs[0, i].set_aspect("equal")
+        axs[0, i].set_xlim(-3, 3)
+        axs[0, i].set_ylim(-3, 3)
 
         # plot the training data
         for x_, y_ in loader:
             x_ = x_.numpy()
             y_ = y_.numpy()
-            axs[i].scatter(x_[y_ == 0, 0], x_[y_ == 0, 1], c="b", s=10)
-            axs[i].scatter(x_[y_ == 1, 0], x_[y_ == 1, 1], c="r", s=10)
+            axs[0, i].scatter(x_[y_ == 0, 0], x_[y_ == 0, 1], c="b", s=10)
+            axs[0, i].scatter(x_[y_ == 1, 0], x_[y_ == 1, 1], c="r", s=10)
 
-    plt.suptitle(title)
+        # in second row, each neuron as (x_intercept, y_intercept) and color intensity output weight
+        slope = []
+        intercept = []
+        colors = []
+        for j in range(width):
+            w = model.layers[0].weight[j].detach().cpu().numpy()
+            b = model.layers[0].bias[j].detach().cpu().numpy()
+            slope.append(-w[0] / w[1])
+            intercept.append(-b / w[1])
+            colors.append(model.layers[1].weight[0, j].detach().cpu().numpy())
+
+        axs[1, i].scatter(
+            slope,
+            intercept,
+            c=colors,
+            cmap="RdBu",
+            s=50,
+            vmin=-2,
+            vmax=2,
+            alpha=0.5,
+            edgecolors="k",
+            linewidths=0.5,
+        )
+        axs[1, i].set_aspect("equal")
+        axs[1, i].set_xlim(-10, 10)
+        axs[1, i].set_ylim(-10, 10)
+        axs[1, i].set_xlabel("slope")
+        axs[1, i].set_ylabel("intercept")
+
+    plt.tight_layout()
+
+    # colorbar
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.85, 0.15, 0.02, 0.7])
+    fig.colorbar(
+        cm.ScalarMappable(norm=cm.colors.Normalize(vmin=-2, vmax=2), cmap="RdBu"),
+        cax=cbar_ax,
+    )
+
+    # title
+    fig.suptitle(title)
+
     # save
-    plt.savefig(f"plots/decision_boundaries/{title}.png")
+    plt.savefig(f"{title}.png", dpi=300)

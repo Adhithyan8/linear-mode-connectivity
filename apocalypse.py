@@ -19,7 +19,8 @@ while idx1 == idx2:
     idx2 = np.random.randint(0, 50)
 
 for dataset in datasets:
-    train_loader, test_loader = get_data(f"{dataset}", 512)
+    # load the data
+    train_loader, test_loader = get_data(dataset, 512)
     for w in width:
         # define and load the models
         model1 = FCNet(2, w, 1, 1)
