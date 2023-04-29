@@ -312,3 +312,50 @@ def loss_barrier(losses):
     loss_barrier = np.max(losses - np.linspace(losses[0], losses[-1], len(losses)))
 
     return loss_barrier
+
+
+def plotter(model1, model2, average_model, width, loader, title):
+    # plot the decision boundaries of model1, model2 and the average model in 1*3 subplots
+
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    axs[0].set_title("model1")
+    axs[1].set_title("model2")
+    axs[2].set_title("average model")
+
+    for i, model in enumerate([model1, model2, average_model]):
+        model.eval().to(device)
+        x1 = np.linspace(-3, 3, 100)
+        x2 = np.linspace(-3, 3, 100)
+        X1, X2 = np.meshgrid(x1, x2)
+        X = np.concatenate([X1.reshape(-1, 1), X2.reshape(-1, 1)], axis=1)
+        X = torch.from_numpy(X).float().to(device)
+        y = model(X).detach().cpu().numpy().reshape(100, 100)
+        # apply sigmoid
+        y = 1 / (1 + np.exp(-y))
+
+        # plot the lines corresponding to each hidden node
+        for j in range(width):
+            w = model.layers[0].weight[j].detach().cpu().numpy()
+            b = model.layers[0].bias[j].detach().cpu().numpy()
+            z = -w[0] / w[1] * x1 - b / w[1]
+            axs[i].plot(x1, z, c=f"C{j}", linestyle="--", linewidth=1, alpha=0.2)
+
+        axs[i].contourf(x1, x2, y, 10, cmap="pink", alpha=0.8)
+        # display countour lines
+        axs[i].contour(x1, x2, y, 10, colors="k", linewidths=0.5, alpha=0.2)
+        # highlight line at 0.5
+        axs[i].contour(x1, x2, y, levels=[0.5], colors="k", linewidths=2)
+        axs[i].set_aspect("equal")
+        axs[i].set_xlim(-3, 3)
+        axs[i].set_ylim(-3, 3)
+
+        # plot the training data
+        for x_, y_ in loader:
+            x_ = x_.numpy()
+            y_ = y_.numpy()
+            axs[i].scatter(x_[y_ == 0, 0], x_[y_ == 0, 1], c="b", s=10)
+            axs[i].scatter(x_[y_ == 1, 0], x_[y_ == 1, 1], c="r", s=10)
+
+    plt.suptitle(title)
+    # save
+    plt.savefig(f"plots/decision_boundaries/{title}.png")
