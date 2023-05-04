@@ -22,9 +22,9 @@ from utils import (
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # config
-datasets = "gaussian"
+datasets = "pentagon"
 n_samples = 512
-widths = [4, 5, 6, 32, 64, 128, 256, 512]
+widths = [4, 8, 16, 32, 64, 128, 256, 512]
 num_models = 50
 depth = 1
 epochs = 100
@@ -32,156 +32,151 @@ epochs = 100
 # Load the data
 train_loader, test_loader = get_data(name=datasets, n_samples=n_samples)
 
-# for width in widths:
-#     # data structure to store losses and accuracies
-#     logs = np.zeros((num_models, 4))
+for width in widths:
+    # data structure to store losses and accuracies
+    logs = np.zeros((num_models, 4))
 
-#     # Define and train many models
-#     models = []
-#     for i in range(num_models):
-#         model = FCNet(input_size=2, width=width, depth=depth, output_size=1)
-#         train(
-#             model,
-#             train_loader,
-#             epochs=epochs,
-#             lr=0.001,
-#             model_name=f"{datasets}/model_s{n_samples}_w{width}_d{depth}_{i}",
-#         )
-#         models.append(model)
+    # Define and train many models
+    models = []
+    for i in range(num_models):
+        model = FCNet(input_size=2, width=width, depth=depth, output_size=1)
+        train(
+            model,
+            train_loader,
+            epochs=epochs,
+            lr=0.001,
+            model_name=f"{datasets}/model_s{n_samples}_w{width}_d{depth}_{i}",
+        )
+        models.append(model)
 
-#         # evaluate
-#         model.eval()
+        # evaluate
+        model.eval()
 
-#         train_loss, train_acc = evaluate(model, train_loader)
-#         test_loss, test_acc = evaluate(model, test_loader)
+        train_loss, train_acc = evaluate(model, train_loader)
+        test_loss, test_acc = evaluate(model, test_loader)
 
-#         logs[i, 0] = train_loss
-#         logs[i, 1] = test_loss
-#         logs[i, 2] = train_acc
-#         logs[i, 3] = test_acc
+        logs[i, 0] = train_loss
+        logs[i, 1] = test_loss
+        logs[i, 2] = train_acc
+        logs[i, 3] = test_acc
 
-#     # save the logs
-#     np.save(f"logs/sigmoid/{datasets}/logs_s{n_samples}_w{width}_d{depth}", logs)
+    # save the logs
+    np.save(f"logs/sigmoid/{datasets}/logs_s{n_samples}_w{width}_d{depth}", logs)
 
-#     for sym in ["naive", "scale", "perm"]:
-#         for data in ["train", "test"]:
-#             if sym == "naive":
-#                 pass
-#             elif sym == "scale" and data == "train":
-#                 # pick index of model with lowest train loss as reference
-#                 reference_model_idx = np.argmin(logs[:, 0])
-#                 print(f"width: {width}, reference model index: {reference_model_idx}")
+    for sym in ["naive", "perm"]:
+        for data in ["train", "test"]:
+            if sym == "naive":
+                pass
+            elif sym == "perm" and data == "train":
+                # pick index of model with lowest train loss as reference
+                reference_model_idx = np.argmin(logs[:, 0])
+                print(f"width: {width}, reference model index: {reference_model_idx}")
 
-#                 # normalize weights
-#                 for i in range(num_models):
-#                     models[i] = normalize_weights(models[i])
+                models[reference_model_idx].eval().to(device)
+                # align all other models to this reference model
+                for i in range(num_models):
+                    if i == reference_model_idx:
+                        continue
+                    models[i].eval().to(device)
 
-#             elif sym == "perm" and data == "train":
-#                 models[reference_model_idx].eval().to(device)
-#                 # align all other models to this reference model
-#                 for i in range(num_models):
-#                     if i == reference_model_idx:
-#                         continue
-#                     models[i].eval().to(device)
+                    models[i] = permute_align(
+                        models[i],
+                        models[reference_model_idx],
+                        train_loader,
+                        epochs=20,
+                        device=device,
+                    )
 
-#                     models[i] = permute_align(
-#                         models[i],
-#                         models[reference_model_idx],
-#                         train_loader,
-#                         epochs=20,
-#                         device=device,
-#                     )
+            # choose loader
+            if data == "train":
+                loader = train_loader
+            else:
+                loader = test_loader
 
-#             # choose loader
-#             if data == "train":
-#                 loader = train_loader
-#             else:
-#                 loader = test_loader
+            # data structure to store interpolation losses
+            int_losses = np.zeros((num_models, num_models, 11))
 
-#             # data structure to store interpolation losses
-#             int_losses = np.zeros((num_models, num_models, 11))
+            # data structure to store loss barriers
+            barriers = np.zeros((num_models, num_models))
 
-#             # data structure to store loss barriers
-#             barriers = np.zeros((num_models, num_models))
+            # data structure to store max barrier
+            max_barriers = np.zeros((num_models, num_models))
 
-#             # data structure to store max barrier
-#             max_barriers = np.zeros((num_models, num_models))
+            # compute interpolation loss for each pair of models
+            # log the results
+            for i in range(num_models):
+                for j in range(num_models):
+                    if i == j:
+                        continue
+                    if i > j:
+                        int_losses[i, j, :] = int_losses[j, i, :]
+                        barriers[i, j] = barriers[j, i]
+                        max_barriers[i, j] = max_barriers[j, i]
+                        continue
+                    if i < j:
+                        int_losses[i, j, :] = interpolation_losses(
+                            models[i], models[j], loader
+                        )
+                        barriers[i, j] = loss_barrier(int_losses[i, j, :])
+                        max_barriers[i, j] = max(int_losses[i, j, :])
 
-#             # compute interpolation loss for each pair of models
-#             # log the results
-#             for i in range(num_models):
-#                 for j in range(num_models):
-#                     if i == j:
-#                         continue
-#                     if i > j:
-#                         int_losses[i, j, :] = int_losses[j, i, :]
-#                         barriers[i, j] = barriers[j, i]
-#                         max_barriers[i, j] = max_barriers[j, i]
-#                         continue
-#                     if i < j:
-#                         int_losses[i, j, :] = interpolation_losses(
-#                             models[i], models[j], loader
-#                         )
-#                         barriers[i, j] = loss_barrier(int_losses[i, j, :])
-#                         max_barriers[i, j] = max(int_losses[i, j, :])
+            np.save(
+                f"logs/sigmoid/{datasets}/{sym}_int_losses_{data}_s{n_samples}_w{width}_d{depth}",
+                int_losses,
+            )
+            np.save(
+                f"logs/sigmoid/{datasets}/{sym}_barriers_{data}_s{n_samples}_w{width}_d{depth}",
+                barriers,
+            )
+            np.save(
+                f"logs/sigmoid/{datasets}/{sym}_max_barriers_{data}_s{n_samples}_w{width}_d{depth}",
+                max_barriers,
+            )
 
-#             np.save(
-#                 f"logs/sigmoid/{datasets}/{sym}_int_losses_{data}_s{n_samples}_w{width}_d{depth}",
-#                 int_losses,
-#             )
-#             np.save(
-#                 f"logs/sigmoid/{datasets}/{sym}_barriers_{data}_s{n_samples}_w{width}_d{depth}",
-#                 barriers,
-#             )
-#             np.save(
-#                 f"logs/sigmoid/{datasets}/{sym}_max_barriers_{data}_s{n_samples}_w{width}_d{depth}",
-#                 max_barriers,
-#             )
+# visualizing model losses and accuracies
+# create 4*8 subplots with enough space between them, pad the columns
+fig, axes = plt.subplots(4, 8, figsize=(20, 20), squeeze=True, sharey=True)
 
-# # visualizing model losses and accuracies
-# # create 4*8 subplots with enough space between them, pad the columns
-# fig, axes = plt.subplots(4, 8, figsize=(20, 20), squeeze=True, sharey=True)
+# for widths, load the model losses and accuracies and show their histograms
+for i, width in enumerate(widths):
+    model_logs = np.load(
+        f"logs/sigmoid/{datasets}/logs_s{n_samples}_w{width}_d{depth}.npy"
+    )
+    train_losses = model_logs[:, 0]
+    test_losses = model_logs[:, 1]
+    train_accuracies = model_logs[:, 2]
+    test_accuracies = model_logs[:, 3]
 
-# # for widths, load the model losses and accuracies and show their histograms
-# for i, width in enumerate(widths):
-#     model_logs = np.load(
-#         f"logs/sigmoid/{datasets}/logs_s{n_samples}_w{width}_d{depth}.npy"
-#     )
-#     train_losses = model_logs[:, 0]
-#     test_losses = model_logs[:, 1]
-#     train_accuracies = model_logs[:, 2]
-#     test_accuracies = model_logs[:, 3]
+    # show train loss histogram
+    ax = axes[i // 4, i % 4]
+    ax.hist(train_losses, bins=5, color="C0"),
+    ax.set_title("width = {}".format(width))
+    ax.set_xlabel("train loss")
+    # show test loss histogram
+    ax = axes[i // 4, i % 4 + 4]
+    ax.hist(test_losses, bins=5, color="C1")
+    ax.set_title("width = {}".format(width))
+    ax.set_xlabel("test loss")
+    # show train accuracy histogram
+    ax = axes[i // 4 + 2, i % 4]
+    ax.hist(train_accuracies, bins=5, color="C2")
+    ax.set_title("width = {}".format(width))
+    ax.set_xlabel("train accuracy")
+    # show test accuracy histogram
+    ax = axes[i // 4 + 2, i % 4 + 4]
+    ax.hist(test_accuracies, bins=5, color="C3")
+    ax.set_title("width = {}".format(width))
+    ax.set_xlabel("test accuracy")
 
-#     # show train loss histogram
-#     ax = axes[i // 4, i % 4]
-#     ax.hist(train_losses, bins=5, color="C0"),
-#     ax.set_title("width = {}".format(width))
-#     ax.set_xlabel("train loss")
-#     # show test loss histogram
-#     ax = axes[i // 4, i % 4 + 4]
-#     ax.hist(test_losses, bins=5, color="C1")
-#     ax.set_title("width = {}".format(width))
-#     ax.set_xlabel("test loss")
-#     # show train accuracy histogram
-#     ax = axes[i // 4 + 2, i % 4]
-#     ax.hist(train_accuracies, bins=5, color="C2")
-#     ax.set_title("width = {}".format(width))
-#     ax.set_xlabel("train accuracy")
-#     # show test accuracy histogram
-#     ax = axes[i // 4 + 2, i % 4 + 4]
-#     ax.hist(test_accuracies, bins=5, color="C3")
-#     ax.set_title("width = {}".format(width))
-#     ax.set_xlabel("test accuracy")
+# save
+plt.savefig("model_performance.png", dpi=300)
 
-# # save
-# plt.savefig("model_performance.png", dpi=300)
-
-# # close the figure
-# plt.close()
+# close the figure
+plt.close()
 
 # analyze the results
 # visualize interpolation losses
-for sym in ["naive", "scale", "perm"]:
+for sym in ["naive", "perm"]:
     for data in ["train", "test"]:
         # create 2*4 subplots
         fig, axes = plt.subplots(2, 4, figsize=(20, 8), sharex=True, sharey=True)
@@ -241,7 +236,7 @@ for sym in ["naive", "scale", "perm"]:
         plt.close()
 
 # visualize barriers
-for sym in ["naive", "scale", "perm"]:
+for sym in ["naive", "perm"]:
     for data in ["train", "test"]:
         # create 2*4 subplots
         fig, axes = plt.subplots(2, 4, figsize=(20, 8))
@@ -275,7 +270,7 @@ for sym in ["naive", "scale", "perm"]:
         plt.close()
 
 # visualize max barriers
-for sym in ["naive", "scale", "perm"]:
+for sym in ["naive", "perm"]:
     for data in ["train", "test"]:
         # create 2*4 subplots
         fig, axes = plt.subplots(2, 4, figsize=(20, 8))

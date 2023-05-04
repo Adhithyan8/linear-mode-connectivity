@@ -84,7 +84,9 @@ def get_data(name: str = "blobs", n_samples=512) -> tuple:
             random_state=0,
             return_centers=False,
         )
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.5, random_state=0
+        )
 
         # make data loaders
         train_loader = DataLoader(
@@ -106,7 +108,9 @@ def get_data(name: str = "blobs", n_samples=512) -> tuple:
         # MOONS
         # generate moons dataset, split into train and test
         X, y = make_moons(n_samples=n_samples, noise=0.1, random_state=0)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.5, random_state=0
+        )
 
         # make data loaders
         train_loader = DataLoader(
@@ -130,7 +134,9 @@ def get_data(name: str = "blobs", n_samples=512) -> tuple:
         X, y = make_gaussian_quantiles(
             n_samples=n_samples, n_features=2, n_classes=2, random_state=0
         )
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.5, random_state=0
+        )
 
         # make data loaders
         train_loader = DataLoader(
@@ -158,7 +164,60 @@ def get_data(name: str = "blobs", n_samples=512) -> tuple:
             n_informative=2,
             random_state=0,
         )
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.5, random_state=0
+        )
+
+        # make data loaders
+        train_loader = DataLoader(
+            TensorDataset(
+                torch.from_numpy(X_train).float(), torch.from_numpy(y_train).long()
+            ),
+            batch_size=64,
+            shuffle=True,
+        )
+        test_loader = DataLoader(
+            TensorDataset(
+                torch.from_numpy(X_test).float(), torch.from_numpy(y_test).long()
+            ),
+            batch_size=64,
+            shuffle=False,
+        )
+
+    elif name == "pentagon":
+        # class 0: inside pentagon centered at (0, 0)
+        # class 1: outside pentagon within square centered at (0, 0) with side length 2
+        # generate pentagon dataset, split into train and test
+        def inside_pentagon(x):
+            x1, x2 = x
+            return (
+                1.41 * x1 + 1.02 * x2 - 2.09 < 0
+                and -0.53 * x1 + 1.65 * x2 - 2.09 < 0
+                and -1.74 * x1 - 2.09 < 0
+                and -0.53 * x1 - 1.65 * x2 - 2.09 < 0
+                and 1.41 * x1 - 1.02 * x2 - 2.09 < 0
+            )
+
+        # get n_samples/2 samples from each class using rejection sampling
+        X = []
+        y = []
+        while len(X) < int(n_samples / 2):
+            x = np.random.uniform(-2, 2, 2)
+            if inside_pentagon(x):
+                X.append(x)
+                y.append(0)
+        while len(X) < n_samples:
+            x = np.random.uniform(-2, 2, 2)
+            if not inside_pentagon(x):
+                X.append(x)
+                y.append(1)
+        X = np.array(X)
+        y = np.array(y)
+
+        # split into train and test
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.5, random_state=0
+        )
 
         # make data loaders
         train_loader = DataLoader(
