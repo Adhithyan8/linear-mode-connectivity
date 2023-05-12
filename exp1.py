@@ -64,22 +64,32 @@ for width in widths:
             elif sym == "perm" and data == "train":
                 # pick index of model with lowest train loss as reference
                 reference_model_idx = np.argmin(logs[:, 0])
-                print(f"width: {width}, reference model index: {reference_model_idx}")
-
                 models[reference_model_idx].eval().to(device)
+                perm_log = np.zeros((num_models, 400))
+
                 # align all other models to this reference model
                 for i in range(num_models):
                     if i == reference_model_idx:
                         continue
                     models[i].eval().to(device)
 
-                    models[i] = permute_align(
+                    models[i], perm_log[i, :] = permute_align(
                         models[i],
                         models[reference_model_idx],
                         train_loader,
-                        epochs=20,
+                        epochs=100,
                         device=device,
                     )
+                    # save the permuted model
+                    torch.save(
+                        models[i].state_dict(),
+                        f"models/sigmoid/{datasets}/perm_model_s{n_samples}_w{width}_d{depth}_{reference_model_idx}_{i}.pth",
+                    )
+
+                np.save(
+                    f"logs/sigmoid/{datasets}/perm_log_s{n_samples}_w{width}_d{depth}",
+                    perm_log,
+                )
 
             # choose loader
             if data == "train":
