@@ -1,11 +1,6 @@
-from math import comb
-
 import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
 import torch
-from matplotlib.colors import LogNorm
-from matplotlib.scale import LogScale
 from scipy.cluster.hierarchy import leaves_list, linkage
 
 from architecture.MLP import FCNet, train
@@ -15,7 +10,6 @@ from utils import (
     get_data,
     interpolation_losses,
     loss_barrier,
-    normalize_weights,
 )
 
 # Set the device

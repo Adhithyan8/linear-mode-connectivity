@@ -14,7 +14,8 @@ Reference:
 
 Peña, Fidel A. Guerrero, et al. "Re-basin via implicit Sinkhorn differentiation." 
 arXiv preprint arXiv:2212.12042 (2022).
-""" """""" """""" """""" """""" """""" """""" """""" """""" """""" """""" """""" """""" ""
+""" """""" """""" """""" """""" """""" """""" """""" """""" """""" """""" """""" """""" """"""
+
 
 # Implicit Sinkhorn
 class Sinkhorn(torch.autograd.Function):
@@ -116,7 +117,6 @@ class ReparamNet(torch.nn.Module):
         for (name, p1), p2 in zip(
             self.output.named_parameters(), self.model.parameters()
         ):
-
             if "bias" in name:
                 i -= 1
                 p1.copy_(P[i] @ p2)
@@ -207,7 +207,6 @@ class RebasinNet(torch.nn.Module):
             p.data = torch.eye(p.shape[0]).to(p.data.device)
 
     def forward(self, x=None):
-
         if self.training:
             gk = list()
             for i in range(len(self.p)):
@@ -289,11 +288,14 @@ def permute_align(model1, model2, data_loader, epochs, device):
     pi_model = RebasinNet(model1)
     pi_model.to(device)
 
+    # store losses
+    losses = list()
+
     # mid point loss Eq 7
     criterion = RndLoss(model2, criterion=torch.nn.BCEWithLogitsLoss())
 
     # optimizer
-    optimizer = torch.optim.AdamW(pi_model.p.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(pi_model.p.parameters(), lr=0.1)
 
     for _ in range(epochs):
         # training step
@@ -302,6 +304,7 @@ def permute_align(model1, model2, data_loader, epochs, device):
             y = y.unsqueeze(1).float()
             rebased_model = pi_model()
             loss = criterion(rebased_model, x.to(device), y.to(device))
+            losses.append(loss.item())
 
             optimizer.zero_grad()
             loss.backward()
@@ -310,4 +313,4 @@ def permute_align(model1, model2, data_loader, epochs, device):
     pi_model.eval()
     rebased_model = copy.deepcopy(pi_model())
 
-    return rebased_model
+    return rebased_model, losses
