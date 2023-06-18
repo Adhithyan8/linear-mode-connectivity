@@ -44,11 +44,6 @@ def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
     ]
     optimizer = torch.optim.AdamW(optimizer_parameters, lr=lr)
 
-    # Define oneCycle scheduler
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=0.1, steps_per_epoch=len(train_loader), epochs=epochs
-    )
-
     # Train the model
     model.to(device)
     model.train()
@@ -56,7 +51,7 @@ def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
     for epoch in range(epochs):
         for x, y in train_loader:
             # model has 1 output
-            y = y.unsqueeze(1).float()
+            y = y.unsqueeze(1)
             # Forward pass
             optimizer.zero_grad()
             y_pred = model(x.to(device))
@@ -65,7 +60,6 @@ def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
             # Backward pass
             loss.backward()
             optimizer.step()
-            scheduler.step()
 
     # save the model
-    torch.save(model.state_dict(), f"models/sigmoid/{model_name}.pth")
+    torch.save(model.state_dict(), f"models/{model_name}.pth")
