@@ -13,7 +13,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-width = 4
+width = 512
 
 # load data from data/moons.npz
 file = np.load("data/moons.npz")
@@ -44,6 +44,10 @@ idx2 = np.random.randint(0, 50)
 while idx1 == idx2:
     idx2 = np.random.randint(0, 50)
 
+# replace
+idx1 = 33
+idx2 = 39
+
 # load both models
 model1 = FCNet(2, width, 1, 1)
 model2 = FCNet(2, width, 1, 1)
@@ -58,90 +62,136 @@ for key in model1.state_dict():
 average_model.load_state_dict(average_state_dict)
 
 # plot all three for all three models
-fig, axs = plt.subplots(3, 3)
-fig.set_size_inches(15, 15)
+fig, axs = plt.subplots(1, 2)
 
 # set titles for each row
-axs[0, 0].set_title(f"model {idx1}")
-axs[0, 1].set_title(f"model {idx2}")
-axs[0, 2].set_title(f"average model")
+axs[0].set_title(f"model {idx1}")
+axs[1].set_title(f"model {idx2}")
 
-axs[1, 1].set_title(f"weight scales")
-axs[2, 1].set_title(f"neurons")
+# for i, model in enumerate([model1, model2]):
+#     # decision boundary
+#     model.eval().to(device)
+#     x1 = np.linspace(-3, 3, 100)
+#     x2 = np.linspace(-3, 3, 100)
+#     X1, X2 = np.meshgrid(x1, x2)
+#     X = np.concatenate([X1.reshape(-1, 1), X2.reshape(-1, 1)], axis=1)
+#     X = torch.from_numpy(X).float().to(device)
+#     y = model(X).detach().cpu().numpy().reshape(100, 100)
+#     # apply sigmoid
+#     y = 1 / (1 + np.exp(-y))
 
-for i, model in enumerate([model1, model2, average_model]):
-    # decision boundary
+#     w_in = model.layers[0].weight.detach().cpu().numpy()
+#     b_in = model.layers[0].bias.detach().cpu().numpy()
+#     # plot the lines corresponding to each hidden node
+#     for j in range(width):
+#         axs[i].plot(
+#             x1,
+#             -(w_in[j, 0] * x1 + b_in[j]) / w_in[j, 1],
+#             linestyle="dotted",
+#             alpha=0.2,
+#             c=f"C{j}",
+#         )
+#     axs[i].contourf(x1, x2, y, 3, cmap="RdBu_r", alpha=0.5)
+#     # highlight line at 0.5
+#     axs[i].contour(x1, x2, y, levels=[0.5], colors="k", linewidths=2)
+#     axs[i].set_aspect("equal")
+#     axs[i].set_xlim(-3, 3)
+#     axs[i].set_ylim(-3, 3)
+
+#     # plot the training data
+#     for x_, y_ in train_loader:
+#         x_ = x_.numpy()
+#         y_ = y_.numpy()
+#         axs[i].scatter(x_[y_ == 0, 0], x_[y_ == 0, 1], c="b", s=2)
+#         axs[i].scatter(x_[y_ == 1, 0], x_[y_ == 1, 1], c="r", s=2)
+
+# fig.suptitle(f"Decision boundary: width = {width}")
+# plt.tight_layout()
+# plt.savefig(f"moons_w{width}.png", dpi=600, bbox_inches="tight")
+
+# # plot decision boundary for average model
+# fig, axs = plt.subplots(1, 1)
+
+# # decision boundary
+# average_model.eval().to(device)
+# x1 = np.linspace(-3, 3, 100)
+# x2 = np.linspace(-3, 3, 100)
+# X1, X2 = np.meshgrid(x1, x2)
+# X = np.concatenate([X1.reshape(-1, 1), X2.reshape(-1, 1)], axis=1)
+# X = torch.from_numpy(X).float().to(device)
+# y = average_model(X).detach().cpu().numpy().reshape(100, 100)
+# # apply sigmoid
+# y = 1 / (1 + np.exp(-y))
+
+# w_in = average_model.layers[0].weight.detach().cpu().numpy()
+# b_in = average_model.layers[0].bias.detach().cpu().numpy()
+# # plot the lines corresponding to each hidden node
+# for j in range(width):
+#     axs.plot(
+#         x1,
+#         -(w_in[j, 0] * x1 + b_in[j]) / w_in[j, 1],
+#         linestyle="dotted",
+#         alpha=0.2,
+#         c=f"C{j}",
+#     )
+# axs.contourf(x1, x2, y, 3, cmap="RdBu_r", alpha=0.5)
+# # highlight line at 0.5
+# axs.contour(x1, x2, y, levels=[0.5], colors="k", linewidths=2)
+# axs.set_aspect("equal")
+# axs.set_xlim(-3, 3)
+# axs.set_ylim(-3, 3)
+
+# # plot the training data
+# for x_, y_ in train_loader:
+#     x_ = x_.numpy()
+#     y_ = y_.numpy()
+#     axs.scatter(x_[y_ == 0, 0], x_[y_ == 0, 1], c="b", s=2)
+#     axs.scatter(x_[y_ == 1, 0], x_[y_ == 1, 1], c="r", s=2)
+
+# fig.suptitle(f"Average of models {idx1} and {idx2}")
+# plt.tight_layout()
+# plt.savefig(f"moons_w{width}_average.png", dpi=600, bbox_inches="tight")
+
+# plot the weights
+fig, axs = plt.subplots(1, 2)
+# size
+fig.set_size_inches(8, 4)
+
+# plot the weights
+for i, model in enumerate([model1, model2]):
     model.eval().to(device)
-    x1 = np.linspace(-3, 3, 100)
-    x2 = np.linspace(-3, 3, 100)
-    X1, X2 = np.meshgrid(x1, x2)
-    X = np.concatenate([X1.reshape(-1, 1), X2.reshape(-1, 1)], axis=1)
-    X = torch.from_numpy(X).float().to(device)
-    y = model(X).detach().cpu().numpy().reshape(100, 100)
-    # apply sigmoid
-    y = 1 / (1 + np.exp(-y))
-
     w_in = model.layers[0].weight.detach().cpu().numpy()
-    w_in_norm = np.linalg.norm(w_in, axis=1)
     b_in = model.layers[0].bias.detach().cpu().numpy()
     w_out = model.layers[1].weight.detach().cpu().numpy()
-    w_out = np.squeeze(w_out)
-    # plot the lines corresponding to each hidden node
-    for j in range(width):
-        axs[0, i].plot(
-            x1,
-            -(w_in[j, 0] * x1 + b_in[j]) / w_in[j, 1],
-            linestyle="dotted",
-            alpha=1.0,
-            c=f"C{j}",
-            label=f"neuron {j}",
-        )
-    axs[0, i].contourf(x1, x2, y, 3, cmap="RdBu_r", alpha=0.5)
-    # highlight line at 0.5
-    axs[0, i].contour(x1, x2, y, levels=[0.5], colors="k", linewidths=2)
-    axs[0, i].set_aspect("equal")
-    axs[0, i].set_xlim(-3, 3)
-    axs[0, i].set_ylim(-3, 3)
-
-    # plot the training data
-    for x_, y_ in train_loader:
-        x_ = x_.numpy()
-        y_ = y_.numpy()
-        axs[0, i].scatter(x_[y_ == 0, 0], x_[y_ == 0, 1], c="b", s=10)
-        axs[0, i].scatter(x_[y_ == 1, 0], x_[y_ == 1, 1], c="r", s=10)
-
-    axs[0, i].legend()
+    w_in_norm = np.linalg.norm(w_in, axis=1)
 
     # in second row, plot w_in norm vs w_out
-    axs[1, i].scatter(
-        w_in_norm, w_out, c="k", alpha=0.1, s=20, edgecolors="k", linewidths=0.5
+    axs[i].set_xlim(-0.2, 2.5)
+    axs[i].set_ylim(-1.25, 1.25)
+    # hexbin
+    axs[i].hexbin(
+        w_in_norm,
+        w_out.reshape(-1),
+        gridsize=25,
+        marginals=True,
+        cmap="Blues",
+        extent=[-0.2, 2.5, -1.25, 1.25],
+        vmin=0,
+        vmax=20,    
     )
-    axs[1, i].set_xlabel("$\|| w_{in} \||$")
-    axs[1, i].set_ylabel("$w_{out}$")
-    axs[1, i].set_xlim(0, 5)
-    axs[1, i].set_ylim(-5, 5)
+    # labels
+    axs[i].set_xlabel("$\| w_{in} \|_2$")
+    axs[i].set_ylabel("$w_{out}$")
 
-    slope = -w_in[:, 0] / w_in[:, 1]
-    intercept = -b_in / w_in[:, 1]
-    # in third row, plot neurons as (slope, y_intercept) and color as (w_in norm * w_out)
-    axs[2, i].scatter(
-        slope,
-        intercept,
-        c=w_in_norm * w_out,
-        cmap="RdBu_r",
-        s=20,
-        vmin=-2,
-        vmax=2,
-        alpha=0.5,
-        edgecolors="k",
-        linewidths=0.5,
-    )
-    axs[2, i].set_aspect("equal")
-    axs[2, i].set_xlim(-5, 5)
-    axs[2, i].set_ylim(-5, 5)
-    axs[2, i].set_xlabel("slope")
-    axs[2, i].set_ylabel("intercept")
-fig.suptitle(f"hidden neurons: moons with width {width}\n")
+    axs[i].set_aspect("auto")
+    axs[i].set_title(f"Model {idx1 if i == 0 else idx2}")
+    # grid
+    axs[i].axhline(0, c="k", alpha=0.2, linestyle="dotted")
+    axs[i].axvline(0, c="k", alpha=0.2, linestyle="dotted")
+    # colorbar
+    cb = fig.colorbar(axs[i].collections[0], ax=axs[i])
+    cb.set_label("count")
+
+fig.suptitle(f"width: {width}")
 plt.tight_layout()
-plt.savefig(f"moons_w{width}.png")
-
+plt.savefig(f"moons_w{width}_weights_hm.png", dpi=600, bbox_inches="tight")
