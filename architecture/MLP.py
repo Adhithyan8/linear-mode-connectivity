@@ -4,6 +4,7 @@ import torch.nn as nn
 # Define the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 # Define the model
 class FCNet(nn.Module):
     def __init__(
@@ -29,20 +30,8 @@ def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
     # Define the loss function
     criterion = nn.BCEWithLogitsLoss()
 
-    # Define the optimizer
-    optimizer_parameters = [
-        {
-            "params": [
-                p for n, p in model.named_parameters() if (n.endswith("weight"))
-            ],
-            "weight_decay": 0.0,
-        },
-        {
-            "params": [p for n, p in model.named_parameters() if (n.endswith("bias"))],
-            "weight_decay": 0.0,
-        },
-    ]
-    optimizer = torch.optim.AdamW(optimizer_parameters, lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     # Train the model
     model.to(device)
@@ -60,6 +49,7 @@ def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
             # Backward pass
             loss.backward()
             optimizer.step()
+        lr_scheduler.step()
 
     # save the model
     torch.save(model.state_dict(), f"models/{model_name}.pth")
