@@ -4,8 +4,10 @@ import matplotlib.pyplot as plt
 from architecture.MLP import FCNet
 from utils import get_data, plotter, evaluate
 from collections import OrderedDict
-from matplotlib import cm
-from matplotlib.colors import Normalize
+from matplotlib import cm, colorbar
+from matplotlib.colors import Normalize, BoundaryNorm
+from sklearn.cluster import SpectralClustering
+import seaborn as sns
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -61,12 +63,12 @@ for key in model1.state_dict():
     average_state_dict[key] = (model1.state_dict()[key] + model2.state_dict()[key]) / 2
 average_model.load_state_dict(average_state_dict)
 
-# plot all three for all three models
-fig, axs = plt.subplots(1, 2)
+# # plot all three for all three models
+# fig, axs = plt.subplots(1, 2)
 
-# set titles for each row
-axs[0].set_title(f"model {idx1}")
-axs[1].set_title(f"model {idx2}")
+# # set titles for each row
+# axs[0].set_title(f"model {idx1}")
+# axs[1].set_title(f"model {idx2}")
 
 # for i, model in enumerate([model1, model2]):
 #     # decision boundary
@@ -152,46 +154,380 @@ axs[1].set_title(f"model {idx2}")
 # plt.tight_layout()
 # plt.savefig(f"moons_w{width}_average.png", dpi=600, bbox_inches="tight")
 
-# plot the weights
-fig, axs = plt.subplots(1, 2)
-# size
-fig.set_size_inches(8, 4)
+# # plot the weights
+# fig, axs = plt.subplots(1, 2, sharey=True, sharex=True)
+# # size
+# fig.set_size_inches(8, 4)
 
-# plot the weights
-for i, model in enumerate([model1, model2]):
-    model.eval().to(device)
+# # plot the weights
+# for i, model in enumerate([model1, model2]):
+#     model.eval().to(device)
+#     w_in = model.layers[0].weight.detach().cpu().numpy()
+#     b_in = model.layers[0].bias.detach().cpu().numpy()
+#     w_out = model.layers[1].weight.detach().cpu().numpy()
+#     # add bias to w_in
+#     w_in = np.concatenate([w_in, b_in.reshape(-1, 1)], axis=1)
+#     w_out_abs = np.abs(w_out) ** 2
+#     w_in_norm = np.linalg.norm(w_in, axis=1) ** 2
+
+#     w_strength = w_in_norm.squeeze() + w_out_abs.squeeze()
+#     w_strength_rel = w_strength / np.sum(w_strength)
+#     w_strength_rel = sorted(w_strength_rel, reverse=True)
+#     # show cdf
+#     axs[i].plot(np.cumsum(w_strength_rel), c=f"C{i}")
+#     # y line at 0.95
+#     axs[i].axhline(0.95, linestyle="dotted", c="red", alpha=0.5)
+#     # x line corresponding to 0.95
+#     axs[i].axvline(
+#         np.argwhere(np.cumsum(w_strength_rel) > 0.95)[0][0],
+#         linestyle="dotted",
+#         c="red",
+#         alpha=0.5,
+#     )
+#     # mark the point
+#     axs[i].scatter(
+#         np.argwhere(np.cumsum(w_strength_rel) > 0.95)[0][0],
+#         0.95,
+#         c="red",
+#         alpha=0.5,
+#     )
+#     # text label
+#     axs[i].text(
+#         np.argwhere(np.cumsum(w_strength_rel) > 0.95)[0][0] + 2.0,
+#         0.9,
+#         f"({np.argwhere(np.cumsum(w_strength_rel) > 0.95)[0][0]}, 0.95)",
+#         c="red",
+#         alpha=0.5,
+#     )
+
+#     axs[i].set_title(f"model {idx1}" if i == 0 else f"model {idx2}")
+#     # grid
+#     axs[i].grid(True, alpha=0.5)
+#     axs[i].set_xlabel("hidden nodes")
+
+# fig.suptitle(f"Relative strength of hidden nodes")
+# plt.tight_layout()
+# plt.savefig(f"moons_w{width}_contrib.png", dpi=600, bbox_inches="tight")
+
+# # plot weights
+# fig, axs = plt.subplots(1, 2, sharey=True, sharex=True)
+# # size
+# fig.set_size_inches(8, 4)
+
+# for i, model in enumerate([model1, model2]):
+#     model.eval().to(device)
+#     w_in = model.layers[0].weight.detach().cpu().numpy()
+#     b_in = model.layers[0].bias.detach().cpu().numpy()
+#     w_out = model.layers[1].weight.detach().cpu().numpy()
+#     # add bias to w_in
+#     w_in = np.concatenate([w_in, b_in.reshape(-1, 1)], axis=1)
+#     w_in_norm = np.linalg.norm(w_in, axis=1) ** 2
+#     w_out_abs = np.abs(w_out.squeeze()) ** 2
+
+#     # plot w_in_norm vs w_out
+#     axs[i].scatter(w_in_norm, w_out_abs, c="red", s=10, alpha=0.1)
+#     axs[i].set_title(f"model {idx1}" if i == 0 else f"model {idx2}")
+#     axs[i].set_xlabel("$\|w_{in}\|_2^2$")
+#     axs[i].set_ylabel("$\|w_{out}\|^2$")
+#     axs[i].set_xlim(-0.2, 5.0)
+#     axs[i].set_ylim(-0.2, 2.0)
+#     # add line at 0
+#     axs[i].axhline(0, linestyle="dotted", c="grey", alpha=0.5)
+#     # add vertical line at 0
+#     axs[i].axvline(0, linestyle="dotted", c="grey", alpha=0.5)
+#     # aspect ratio
+#     axs[i].set_aspect("auto")
+
+# fig.suptitle(f"Weight distribution")
+# plt.tight_layout()
+# plt.savefig(f"moons_w{width}_weights.png", dpi=600, bbox_inches="tight")
+
+
+# given a model, return indices and fraction nodes whose relative contribution is less than 95%
+def get_low_norm_nodes(model):
     w_in = model.layers[0].weight.detach().cpu().numpy()
     b_in = model.layers[0].bias.detach().cpu().numpy()
     w_out = model.layers[1].weight.detach().cpu().numpy()
-    w_in_norm = np.linalg.norm(w_in, axis=1)
+    # add bias to w_in
+    w_in = np.concatenate([w_in, b_in.reshape(-1, 1)], axis=1)
+    w_out_abs = np.abs(w_out) ** 2
+    w_in_norm = np.linalg.norm(w_in, axis=1) ** 2
 
-    # in second row, plot w_in norm vs w_out
-    axs[i].set_xlim(-0.2, 2.5)
-    axs[i].set_ylim(-1.25, 1.25)
-    # hexbin
-    axs[i].hexbin(
-        w_in_norm,
-        w_out.reshape(-1),
-        gridsize=25,
-        marginals=True,
-        cmap="Blues",
-        extent=[-0.2, 2.5, -1.25, 1.25],
-        vmin=0,
-        vmax=20,    
+    w_contrib = w_in_norm.squeeze() + w_out_abs.squeeze()
+    w_contrib_rel = w_contrib / np.sum(w_contrib)
+    # get sorted indices of nodes by relative contribution
+    sorted_indices = np.argsort(w_contrib_rel)[::-1]
+    # get sorted relative contributions in descending order
+    sorted_contrib_rel = w_contrib_rel[sorted_indices]
+
+    # get original indices of nodes whose cumulative relative contribution is more than 95%
+    low_norm_indices = sorted_indices[np.cumsum(sorted_contrib_rel) > 0.95]
+    # exclude the first node if list size is greater than 1
+    if len(low_norm_indices) > 1:
+        low_norm_indices = low_norm_indices[1:]
+    else:
+        low_norm_indices = []
+    # get fraction of nodes whose cumulative relative contribution is more than 95%
+    low_norm_fraction = len(low_norm_indices) / len(w_contrib_rel)
+    # return indices and fraction
+    return low_norm_indices, low_norm_fraction
+
+
+# # plot the cosine similarity between incoming weights of node-node pairs
+# # plot the weights
+# for i, model in enumerate([model1, model2, average_model]):
+#     model.eval().to(device)
+#     w_in = model.layers[0].weight.detach().cpu().numpy()
+#     b_in = model.layers[0].bias.detach().cpu().numpy()
+#     w_out = model.layers[1].weight.detach().cpu().numpy()
+
+#     # add bias as column to w_in
+#     w_in = np.hstack((w_in, b_in.reshape(-1, 1)))
+#     # get cosine similarity between incoming weights of node-node pairs
+#     sim = (
+#         w_in
+#         @ w_in.T
+#         / (
+#             (
+#                 np.linalg.norm(w_in, axis=1).reshape(-1, 1)
+#                 @ np.linalg.norm(w_in, axis=1).reshape(1, -1)
+#             )
+#             + 1e-8
+#         )
+#     )
+
+#     # plot the cosine similarity matrix with seaborn clustermap
+#     g = sns.clustermap(
+#         sim,
+#         cmap="vlag",
+#         vmin=-1,
+#         vmax=1,
+#         xticklabels=False,
+#         yticklabels=False,
+#         figsize=(8, 8),
+#         cbar_kws={"label": "cosine similarity"},
+#         metric="euclidean",
+#         method="single",
+#     )
+#     # save the figure
+#     g.ax_row_dendrogram.set_visible(False)
+#     g.ax_col_dendrogram.set_visible(False)
+#     # hide the colorbar
+#     g.cax.set_visible(False)
+#     # save the figure
+#     g.savefig(f"moons_w{width}_sim_{i}.png", dpi=600, bbox_inches="tight")
+
+
+def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99):
+    # get the weights
+    w_in = model.layers[0].weight.detach().cpu().numpy()
+    b_in = model.layers[0].bias.detach().cpu().numpy()
+    w_out = model.layers[1].weight.detach().cpu().numpy()
+    b_out = model.layers[1].bias.detach().cpu().numpy()
+
+    # remove nodes that share high node-node similarity
+    # add bias as column to w_in
+    w_in_vec = np.hstack((w_in, b_in.reshape(-1, 1)))
+
+    # get cosine similarity between incoming weights of node-node pairs
+    sim = (
+        w_in_vec
+        @ w_in_vec.T
+        / (
+            (
+                np.linalg.norm(w_in_vec, axis=1).reshape(-1, 1)
+                @ np.linalg.norm(w_in_vec, axis=1).reshape(1, -1)
+            )
+        )
     )
-    # labels
-    axs[i].set_xlabel("$\| w_{in} \|_2$")
-    axs[i].set_ylabel("$w_{out}$")
+    # consider only upper triangular part and rest as -2
+    sim = np.triu(sim, k=1) + np.tril(np.ones_like(sim) * -2, k=0)
 
-    axs[i].set_aspect("auto")
-    axs[i].set_title(f"Model {idx1 if i == 0 else idx2}")
-    # grid
-    axs[i].axhline(0, c="k", alpha=0.2, linestyle="dotted")
-    axs[i].axvline(0, c="k", alpha=0.2, linestyle="dotted")
-    # colorbar
-    cb = fig.colorbar(axs[i].collections[0], ax=axs[i])
-    cb.set_label("count")
+    # keep track to nodes considered
+    num_nodes_considered = 0
 
-fig.suptitle(f"width: {width}")
-plt.tight_layout()
-plt.savefig(f"moons_w{width}_weights_hm.png", dpi=600, bbox_inches="tight")
+    # loop until all nodes are either kept or removed
+    while num_nodes_considered < len(w_in):
+        # get the highest similarity pair
+        i, j = np.unravel_index(np.argmax(sim), sim.shape)
+        # within [i, :], [:, i], find j with sim > sim_threshold
+        j_0 = np.where(sim[i, :] > sim_threshold)[0]
+        j_1 = np.where(sim[:, i] > sim_threshold)[0]
+        # union of j_0, j_1
+        j_indices = set(j_0).union(set(j_1))
+        # keeping i, remove j, k
+        w_in = np.delete(w_in, list(j_indices), axis=0)
+        b_in = np.delete(b_in, list(j_indices), axis=0)
+        # updating w_out
+        v1 = w_out[:, i]
+        v2 = w_out[:, list(j_indices)]
+        n1 = w_in_vec[i, :]
+        n2 = w_in_vec[list(j_indices), :]
+        lamb = np.linalg.norm(v1) / np.linalg.norm(v2, axis=0)
+        w_out[:, i] = v1 + np.sum(lamb.reshape(1, -1) * v2, axis=1)
+        w_out = np.delete(w_out, list(j_indices), axis=1)
+        # update w_in_vec
+        w_in_vec = np.delete(w_in_vec, list(j_indices), axis=0)
+        # update sim
+        sim = np.delete(sim, list(j_indices), axis=0)
+        sim = np.delete(sim, list(j_indices), axis=1)
+        # update num_nodes_considered
+        num_nodes_considered += len(j_indices) + 1
+
+    # print(f"number of nodes: {len(w_in)}")
+
+    # remove low w_out norm nodes
+    low_norm_indices = set()
+    # get the norm of w_out
+    w_out_norm = np.linalg.norm(w_out, axis=0)
+    # get the indices of nodes with norm < threshold
+    low_norm_indices = low_norm_indices.union(
+        set(np.where(w_out_norm < out_threshold)[0])
+    )
+    # get the norm of w_in_vec
+    w_in_norm = np.linalg.norm(w_in_vec, axis=1)
+    # get the indices of nodes with norm < threshold (intersection)
+    low_norm_indices = low_norm_indices.intersection(
+        set(np.where(w_in_norm < in_threshold)[0])
+    )
+
+    # remove the nodes
+    w_in = np.delete(w_in, list(low_norm_indices), axis=0)
+    b_in = np.delete(b_in, list(low_norm_indices), axis=0)
+    w_out = np.delete(w_out, list(low_norm_indices), axis=1)
+    # update w_in_vec
+    w_in_vec = np.delete(w_in_vec, list(low_norm_indices), axis=0)
+
+    # print(f"number of nodes: {len(w_in)}")
+
+    # number of remaining nodes
+    num_nodes = w_in.shape[0]
+
+    # create new model
+    reduced_model = FCNet(input_size=2, width=num_nodes, depth=1, output_size=1).to(
+        device
+    )
+
+    # set weights
+    reduced_model.layers[0].weight.data = torch.from_numpy(w_in).float().to(device)
+    reduced_model.layers[0].bias.data = torch.from_numpy(b_in).float().to(device)
+    reduced_model.layers[1].weight.data = torch.from_numpy(w_out).float().to(device)
+    reduced_model.layers[1].bias.data = torch.from_numpy(b_out).float().to(device)
+
+    return reduced_model, num_nodes
+
+
+model1.eval().to(device)
+model2.eval().to(device)
+
+# reduce the model
+reduced_model1, num_nodes1 = reduce_model(
+    model1, in_threshold=0.5, out_threshold=0.5, sim_threshold=0.95
+)
+reduced_model2, num_nodes2 = reduce_model(
+    model2, in_threshold=0.5, out_threshold=0.5, sim_threshold=0.95
+)
+
+# performance of reduced models
+l, a = evaluate(reduced_model1, test_loader)
+print(f"Reduced model 1: loss = {l:.4f}, accuracy = {a:.4f}")
+l, a = evaluate(reduced_model2, test_loader)
+print(f"Reduced model 2: loss = {l:.4f}, accuracy = {a:.4f}")
+
+# make average model of width = max(num_nodes1, num_nodes2)
+width = max(num_nodes1, num_nodes2)
+average_model = FCNet(2, width, 1, 1)
+average_state_dict = OrderedDict()
+for key in reduced_model1.state_dict():
+    # pad the smaller model with zeros
+    if key == "layers.0.weight":
+        # choose which model to pad
+        if num_nodes1 < num_nodes2:
+            pad = torch.zeros((num_nodes2 - num_nodes1, 2)).to(device)
+            average_state_dict[key] = (
+                torch.concatenate((reduced_model1.state_dict()[key], pad), axis=0)
+                + reduced_model2.state_dict()[key]
+            ) / 2
+        else:
+            pad = torch.zeros((num_nodes1 - num_nodes2, 2)).to(device)
+            average_state_dict[key] = (
+                reduced_model1.state_dict()[key]
+                + torch.concatenate((reduced_model2.state_dict()[key], pad), axis=0)
+            ) / 2
+    elif key == "layers.0.bias":
+        if num_nodes1 < num_nodes2:
+            pad = torch.zeros(num_nodes2 - num_nodes1).to(device)
+            average_state_dict[key] = (
+                reduced_model2.state_dict()[key]
+                + torch.concatenate((reduced_model1.state_dict()[key], pad), axis=0)
+            ) / 2
+        else:
+            pad = torch.zeros(num_nodes1 - num_nodes2).to(device)
+            average_state_dict[key] = (
+                torch.concatenate((reduced_model2.state_dict()[key], pad), axis=0)
+                + reduced_model1.state_dict()[key]
+            ) / 2
+    elif key == "layers.1.weight":
+        if num_nodes1 < num_nodes2:
+            pad = torch.zeros((1, num_nodes2 - num_nodes1)).to(device)
+            average_state_dict[key] = (
+                torch.concatenate((reduced_model1.state_dict()[key], pad), axis=1)
+                + reduced_model2.state_dict()[key]
+            ) / 2
+        else:
+            pad = torch.zeros((1, num_nodes1 - num_nodes2)).to(device)
+            average_state_dict[key] = (
+                reduced_model1.state_dict()[key]
+                + torch.concatenate((reduced_model2.state_dict()[key], pad), axis=1)
+            ) / 2
+    elif key == "layers.1.bias":
+        average_state_dict[key] = (
+            reduced_model1.state_dict()[key] + reduced_model2.state_dict()[key]
+        ) / 2
+    else:
+        # error handling
+        raise ValueError("key not found")
+average_model.load_state_dict(average_state_dict)
+
+# evaluate the average model
+average_model.eval().to(device)
+loss, acc = evaluate(average_model, test_loader)
+print(f"average model loss: {loss}, average model accuracy: {acc}")
+
+# node-node sim for reduced model1
+w_in1 = reduced_model1.layers[0].weight.data.cpu().numpy()
+b_in1 = reduced_model1.layers[0].bias.data.cpu().numpy()
+w_in1_vec = np.concatenate((w_in1, b_in1.reshape(-1, 1)), axis=1)
+
+# get cosine similarity between incoming weights of node-node pairs
+sim = (
+    w_in1_vec
+    @ w_in1_vec.T
+    / (
+        (
+            np.linalg.norm(w_in1_vec, axis=1).reshape(-1, 1)
+            @ np.linalg.norm(w_in1_vec, axis=1).reshape(1, -1)
+        )
+    )
+)
+
+# plot the cosine similarity matrix with seaborn clustermap
+g = sns.clustermap(
+    sim,
+    cmap="vlag",
+    vmin=-1,
+    vmax=1,
+    xticklabels=False,
+    yticklabels=False,
+    figsize=(8, 8),
+    cbar_kws={"label": "cosine similarity"},
+    metric="euclidean",
+    method="single",
+)
+# save the figure
+g.ax_row_dendrogram.set_visible(False)
+g.ax_col_dendrogram.set_visible(False)
+# hide the colorbar
+g.cax.set_visible(False)
+# save the figure
+g.savefig(f"moons_sim.png", dpi=600, bbox_inches="tight")
