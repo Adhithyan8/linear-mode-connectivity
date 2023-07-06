@@ -5,9 +5,11 @@ from architecture.MLP import FCNet
 from utils import get_data, plotter, evaluate
 from collections import OrderedDict
 from matplotlib import cm, colorbar
-from matplotlib.colors import Normalize, BoundaryNorm
+from matplotlib.colors import Normalize, BoundaryNorm, LogNorm
 from sklearn.cluster import SpectralClustering
 import seaborn as sns
+from gtda.homology import VietorisRipsPersistence
+from gtda.diagrams import BettiCurve, PersistenceLandscape, PersistenceImage
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -273,9 +275,28 @@ def get_low_norm_nodes(model):
     return low_norm_indices, low_norm_fraction
 
 
+# visualize perm interpolation losses
+widths = [4, 8, 16, 32, 128, 512]
+
+
+epsilon = np.zeros((50, 50, 6))
+for data in ["test"]:
+    for i, width in enumerate(widths):
+        int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
+        for j in range(int_losses.shape[0]):
+            for k in range(int_losses.shape[1]):
+                if j == k:
+                    continue
+                if j > k:
+                    epsilon[j, k, i] = epsilon[k, j, i]
+                if j < k:
+                    epsilon[j, k, i] = int_losses[j, k, :].max() - max(
+                        int_losses[j, k, 0], int_losses[j, k, -1]
+                    )
+
 # # plot the cosine similarity between incoming weights of node-node pairs
 # # plot the weights
-# for i, model in enumerate([model1, model2, average_model]):
+# for i, model in enumerate([model2]):
 #     model.eval().to(device)
 #     w_in = model.layers[0].weight.detach().cpu().numpy()
 #     b_in = model.layers[0].bias.detach().cpu().numpy()
@@ -292,30 +313,129 @@ def get_low_norm_nodes(model):
 #                 np.linalg.norm(w_in, axis=1).reshape(-1, 1)
 #                 @ np.linalg.norm(w_in, axis=1).reshape(1, -1)
 #             )
-#             + 1e-8
 #         )
 #     )
+#     D = 1 - sim
+#     # 3D array required for persistence diagrams
+#     D = np.array([D])
 
-#     # plot the cosine similarity matrix with seaborn clustermap
-#     g = sns.clustermap(
-#         sim,
-#         cmap="vlag",
-#         vmin=-1,
-#         vmax=1,
-#         xticklabels=False,
-#         yticklabels=False,
-#         figsize=(8, 8),
-#         cbar_kws={"label": "cosine similarity"},
-#         metric="euclidean",
-#         method="single",
+#     # Instantiate topological transformer
+#     VR = VietorisRipsPersistence(
+#         metric="precomputed", homology_dimensions=[0], n_jobs=-1
 #     )
-#     # save the figure
-#     g.ax_row_dendrogram.set_visible(False)
-#     g.ax_col_dendrogram.set_visible(False)
-#     # hide the colorbar
-#     g.cax.set_visible(False)
-#     # save the figure
-#     g.savefig(f"moons_w{width}_sim_{i}.png", dpi=600, bbox_inches="tight")
+
+#     # Calculate persistence diagrams
+#     diagrams = VR.fit_transform(D)
+
+#     # Instantiate Betti curve transformer
+#     Betti = BettiCurve()
+#     curves = Betti.fit_transform(diagrams)
+
+#     # Plot Betti curves
+#     # set plotly params so y axis is log scale and grid is ON
+#     fig = Betti.plot(
+#         curves,
+#         plotly_params={
+#             "layout": {
+#                 "yaxis_type": "log",
+#                 "yaxis_gridcolor": "grey",
+#                 "xaxis_gridcolor": "grey",
+#                 # title
+#                 "title": f"Clustering features",
+#             }
+#         },
+#     )
+#     # save the plotly figure
+#     fig.write_image(f"moons_w512_betti_1.png", width=800, height=800)
+
+#     # Plot persistence diagrams
+#     fig1 = VR.plot(
+#         diagrams, plotly_params={"layout": {"title": f"Persistence diagram"}}
+#     )
+
+#     # save the plotly figure
+#     fig1.write_image(f"moons_w512_persistence_1.png", width=800, height=800)
+
+# # plot the sim matrix
+# g = sns.clustermap(
+#     sim,
+#     cmap="icefire",
+#     vmin=-1.0,
+#     vmax=1.0,
+#     xticklabels=False,
+#     yticklabels=False,
+#     figsize=(8, 8),
+#     cbar_kws={"label": "cosine similarity"},
+#     metric="euclidean",
+#     method="single",
+# )
+# # save the figure
+# g.ax_row_dendrogram.set_visible(False)
+# g.ax_col_dendrogram.set_visible(False)
+# # hide the colorbar
+# g.cax.set_visible(False)
+# # save the figure
+# g.savefig(f"moons_w512_sim_{i}.png", dpi=600, bbox_inches="tight")
+
+# plot the epsilon matrix
+
+for i, width in enumerate(widths):
+    # Instantiate topological transformer
+    VR = VietorisRipsPersistence(
+        metric="precomputed", homology_dimensions=[0], n_jobs=-1
+    )
+
+    # Calculate persistence diagrams
+    diagrams = VR.fit_transform(np.array([epsilon[:, :, i]]))
+
+    # Instantiate Betti curve transformer
+    Betti = BettiCurve()
+    curves = Betti.fit_transform(diagrams)
+
+    # Plot Betti curves
+    # set plotly params so y axis is log scale and grid is ON
+    fig = Betti.plot(
+        curves,
+        plotly_params={
+            "layout": {
+                "yaxis_type": "log",
+                "yaxis_gridcolor": "grey",
+                "xaxis_gridcolor": "grey",
+                # title
+                "title": f"Clustering models",
+            }
+        },
+    )
+    # save the plotly figure
+    fig.write_image(f"perm_sim_betti_w{width}.png", width=800, height=800)
+
+    # Plot persistence diagrams
+    fig1 = VR.plot(
+        diagrams, plotly_params={"layout": {"title": f"Persistence diagram"}}
+    )
+
+    # save the plotly figure
+    fig1.write_image(f"perm_sim_persistence_w{width}.png", width=800, height=800)
+
+    # g = sns.clustermap(
+    #     epsilon[:, :, i],
+    #     cmap="rocket",
+    #     vmin=0,
+    #     vmax=1.0,
+    #     xticklabels=False,
+    #     yticklabels=False,
+    #     figsize=(8, 8),
+    #     cbar_kws={"label": "$\epsilon$"},
+    #     metric="euclidean",
+    #     method="single",
+    # )
+    # # save the figure
+    # g.ax_row_dendrogram.set_visible(False)
+    # g.ax_col_dendrogram.set_visible(False)
+    # # hide the colorbar
+    # g.cax.set_visible(False)
+    # # save the figure
+    # g.savefig(f"naive_sim_w{width}.png", dpi=600, bbox_inches="tight")
 
 
 def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99):
@@ -417,117 +537,223 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
     return reduced_model, num_nodes
 
 
-model1.eval().to(device)
-model2.eval().to(device)
+# model1.eval().to(device)
+# model2.eval().to(device)
 
-# reduce the model
-reduced_model1, num_nodes1 = reduce_model(
-    model1, in_threshold=0.5, out_threshold=0.5, sim_threshold=0.95
-)
-reduced_model2, num_nodes2 = reduce_model(
-    model2, in_threshold=0.5, out_threshold=0.5, sim_threshold=0.95
-)
+# # reduce the model
+# reduced_model1, num_nodes1 = reduce_model(
+#     model1, in_threshold=0.5, out_threshold=0.5, sim_threshold=0.95
+# )
+# reduced_model2, num_nodes2 = reduce_model(
+#     model2, in_threshold=0.5, out_threshold=0.5, sim_threshold=0.95
+# )
 
-# performance of reduced models
-l, a = evaluate(reduced_model1, test_loader)
-print(f"Reduced model 1: loss = {l:.4f}, accuracy = {a:.4f}")
-l, a = evaluate(reduced_model2, test_loader)
-print(f"Reduced model 2: loss = {l:.4f}, accuracy = {a:.4f}")
+# # performance of reduced models
+# l, a = evaluate(reduced_model1, test_loader)
+# print(f"Reduced model 1: loss = {l:.4f}, accuracy = {a:.4f}")
+# l, a = evaluate(reduced_model2, test_loader)
+# print(f"Reduced model 2: loss = {l:.4f}, accuracy = {a:.4f}")
 
-# make average model of width = max(num_nodes1, num_nodes2)
-width = max(num_nodes1, num_nodes2)
-average_model = FCNet(2, width, 1, 1)
-average_state_dict = OrderedDict()
-for key in reduced_model1.state_dict():
-    # pad the smaller model with zeros
-    if key == "layers.0.weight":
-        # choose which model to pad
-        if num_nodes1 < num_nodes2:
-            pad = torch.zeros((num_nodes2 - num_nodes1, 2)).to(device)
-            average_state_dict[key] = (
-                torch.concatenate((reduced_model1.state_dict()[key], pad), axis=0)
-                + reduced_model2.state_dict()[key]
-            ) / 2
-        else:
-            pad = torch.zeros((num_nodes1 - num_nodes2, 2)).to(device)
-            average_state_dict[key] = (
-                reduced_model1.state_dict()[key]
-                + torch.concatenate((reduced_model2.state_dict()[key], pad), axis=0)
-            ) / 2
-    elif key == "layers.0.bias":
-        if num_nodes1 < num_nodes2:
-            pad = torch.zeros(num_nodes2 - num_nodes1).to(device)
-            average_state_dict[key] = (
-                reduced_model2.state_dict()[key]
-                + torch.concatenate((reduced_model1.state_dict()[key], pad), axis=0)
-            ) / 2
-        else:
-            pad = torch.zeros(num_nodes1 - num_nodes2).to(device)
-            average_state_dict[key] = (
-                torch.concatenate((reduced_model2.state_dict()[key], pad), axis=0)
-                + reduced_model1.state_dict()[key]
-            ) / 2
-    elif key == "layers.1.weight":
-        if num_nodes1 < num_nodes2:
-            pad = torch.zeros((1, num_nodes2 - num_nodes1)).to(device)
-            average_state_dict[key] = (
-                torch.concatenate((reduced_model1.state_dict()[key], pad), axis=1)
-                + reduced_model2.state_dict()[key]
-            ) / 2
-        else:
-            pad = torch.zeros((1, num_nodes1 - num_nodes2)).to(device)
-            average_state_dict[key] = (
-                reduced_model1.state_dict()[key]
-                + torch.concatenate((reduced_model2.state_dict()[key], pad), axis=1)
-            ) / 2
-    elif key == "layers.1.bias":
-        average_state_dict[key] = (
-            reduced_model1.state_dict()[key] + reduced_model2.state_dict()[key]
-        ) / 2
-    else:
-        # error handling
-        raise ValueError("key not found")
-average_model.load_state_dict(average_state_dict)
+# # make average model of width = max(num_nodes1, num_nodes2)
+# width = max(num_nodes1, num_nodes2)
+# average_model = FCNet(2, width, 1, 1)
+# average_state_dict = OrderedDict()
+# for key in reduced_model1.state_dict():
+#     # pad the smaller model with zeros
+#     if key == "layers.0.weight":
+#         # choose which model to pad
+#         if num_nodes1 < num_nodes2:
+#             pad = torch.zeros((num_nodes2 - num_nodes1, 2)).to(device)
+#             average_state_dict[key] = (
+#                 torch.concatenate((reduced_model1.state_dict()[key], pad), axis=0)
+#                 + reduced_model2.state_dict()[key]
+#             ) / 2
+#         else:
+#             pad = torch.zeros((num_nodes1 - num_nodes2, 2)).to(device)
+#             average_state_dict[key] = (
+#                 reduced_model1.state_dict()[key]
+#                 + torch.concatenate((reduced_model2.state_dict()[key], pad), axis=0)
+#             ) / 2
+#     elif key == "layers.0.bias":
+#         if num_nodes1 < num_nodes2:
+#             pad = torch.zeros(num_nodes2 - num_nodes1).to(device)
+#             average_state_dict[key] = (
+#                 reduced_model2.state_dict()[key]
+#                 + torch.concatenate((reduced_model1.state_dict()[key], pad), axis=0)
+#             ) / 2
+#         else:
+#             pad = torch.zeros(num_nodes1 - num_nodes2).to(device)
+#             average_state_dict[key] = (
+#                 torch.concatenate((reduced_model2.state_dict()[key], pad), axis=0)
+#                 + reduced_model1.state_dict()[key]
+#             ) / 2
+#     elif key == "layers.1.weight":
+#         if num_nodes1 < num_nodes2:
+#             pad = torch.zeros((1, num_nodes2 - num_nodes1)).to(device)
+#             average_state_dict[key] = (
+#                 torch.concatenate((reduced_model1.state_dict()[key], pad), axis=1)
+#                 + reduced_model2.state_dict()[key]
+#             ) / 2
+#         else:
+#             pad = torch.zeros((1, num_nodes1 - num_nodes2)).to(device)
+#             average_state_dict[key] = (
+#                 reduced_model1.state_dict()[key]
+#                 + torch.concatenate((reduced_model2.state_dict()[key], pad), axis=1)
+#             ) / 2
+#     elif key == "layers.1.bias":
+#         average_state_dict[key] = (
+#             reduced_model1.state_dict()[key] + reduced_model2.state_dict()[key]
+#         ) / 2
+#     else:
+#         # error handling
+#         raise ValueError("key not found")
+# average_model.load_state_dict(average_state_dict)
 
-# evaluate the average model
-average_model.eval().to(device)
-loss, acc = evaluate(average_model, test_loader)
-print(f"average model loss: {loss}, average model accuracy: {acc}")
+# # evaluate the average model
+# average_model.eval().to(device)
+# loss, acc = evaluate(average_model, test_loader)
+# print(f"average model loss: {loss}, average model accuracy: {acc}")
 
-# node-node sim for reduced model1
-w_in1 = reduced_model1.layers[0].weight.data.cpu().numpy()
-b_in1 = reduced_model1.layers[0].bias.data.cpu().numpy()
-w_in1_vec = np.concatenate((w_in1, b_in1.reshape(-1, 1)), axis=1)
+# # node-node sim for reduced model1
+# w_in1 = reduced_model1.layers[0].weight.data.cpu().numpy()
+# b_in1 = reduced_model1.layers[0].bias.data.cpu().numpy()
+# w_in1_vec = np.concatenate((w_in1, b_in1.reshape(-1, 1)), axis=1)
 
-# get cosine similarity between incoming weights of node-node pairs
-sim = (
-    w_in1_vec
-    @ w_in1_vec.T
-    / (
-        (
-            np.linalg.norm(w_in1_vec, axis=1).reshape(-1, 1)
-            @ np.linalg.norm(w_in1_vec, axis=1).reshape(1, -1)
-        )
-    )
-)
+# # get cosine similarity between incoming weights of node-node pairs
+# sim = (
+#     w_in1_vec
+#     @ w_in1_vec.T
+#     / (
+#         (
+#             np.linalg.norm(w_in1_vec, axis=1).reshape(-1, 1)
+#             @ np.linalg.norm(w_in1_vec, axis=1).reshape(1, -1)
+#         )
+#     )
+# )
 
-# plot the cosine similarity matrix with seaborn clustermap
-g = sns.clustermap(
-    sim,
-    cmap="vlag",
-    vmin=-1,
-    vmax=1,
-    xticklabels=False,
-    yticklabels=False,
-    figsize=(8, 8),
-    cbar_kws={"label": "cosine similarity"},
-    metric="euclidean",
-    method="single",
-)
-# save the figure
-g.ax_row_dendrogram.set_visible(False)
-g.ax_col_dendrogram.set_visible(False)
-# hide the colorbar
-g.cax.set_visible(False)
-# save the figure
-g.savefig(f"moons_sim.png", dpi=600, bbox_inches="tight")
+# # plot the cosine similarity matrix with seaborn clustermap
+# g = sns.clustermap(
+#     sim,
+#     cmap="vlag",
+#     vmin=-1,
+#     vmax=1,
+#     xticklabels=False,
+#     yticklabels=False,
+#     figsize=(8, 8),
+#     cbar_kws={"label": "cosine similarity"},
+#     metric="euclidean",
+#     method="single",
+# )
+# # save the figure
+# g.ax_row_dendrogram.set_visible(False)
+# g.ax_col_dendrogram.set_visible(False)
+# # hide the colorbar
+# g.cax.set_visible(False)
+# # save the figure
+# g.savefig(f"moons_sim.png", dpi=600, bbox_inches="tight")
+
+
+# # Lets see if SWA averages are equivalent naive or aligned averaging
+# # SWA
+# from torch.optim.swa_utils import AveragedModel, SWALR
+
+# # Lets keep model 0 as ref
+# widths = [4, 8, 16, 32, 128, 512]
+# model_losses = np.zeros((len(widths), 21))
+# swa_model_losses = np.zeros((len(widths), 21))
+
+# for i, width in enumerate(widths):
+#     model = FCNet(2, width, 1, 1).to(device)
+#     model.load_state_dict(torch.load(f"models/moons/model_w{width}_0.pth"))
+
+#     # model
+#     loss, _ = evaluate(model, test_loader)
+#     model_losses[i, 0] = loss
+
+#     criterion = torch.nn.BCEWithLogitsLoss()
+#     optimizer = torch.optim.AdamW(model.parameters(), lr=0.05)
+#     swa_model = AveragedModel(model).to(device).train()
+#     swa_scheduler = SWALR(optimizer, swa_lr=0.05)
+
+#     # as the model is already trained, we start swa right away
+#     swa_start = 0
+#     swa_model.update_parameters(model)
+#     swa_scheduler.step()
+
+#     # SWA
+#     swa_model.eval()
+#     loss, _ = evaluate(swa_model, test_loader)
+#     swa_model_losses[i, 0] = loss
+#     swa_model.train()
+
+#     for epoch in range(20):
+#         for x, y in train_loader:
+#             # model has 1 output
+#             y = y.unsqueeze(1)
+#             # Forward pass
+#             optimizer.zero_grad()
+#             y_pred = model(x.to(device))
+#             loss = criterion(y_pred, y.to(device))
+#             # Backward pass
+#             loss.backward()
+#             optimizer.step()
+#         # save the model every epoch
+#         torch.save(model.state_dict(), f"models/moons/swain_w{width}_{epoch}.pth")
+#         # evaluate the model
+#         loss, _ = evaluate(model, test_loader)
+#         model_losses[i, epoch + 1] = loss
+#         # update the swa model
+#         if epoch >= swa_start:
+#             swa_model.update_parameters(model)
+#             swa_scheduler.step()
+#         # save the model every epoch
+#         torch.save(swa_model.state_dict(), f"models/moons/swa_w{width}_{epoch}.pth")
+#         # evaluate the swa model
+#         swa_model.eval()
+#         loss, _ = evaluate(swa_model, test_loader)
+#         swa_model_losses[i, epoch + 1] = loss
+#         swa_model.train()
+
+# # save the losses
+# np.save("logs/moons/swain_model_losses.npy", model_losses)
+# np.save("logs/moons/swa_model_losses.npy", swa_model_losses)
+
+# # plot the losses
+# model_losses = np.load("logs/moons/swain_model_losses.npy")
+# swa_model_losses = np.load("logs/moons/swa_model_losses.npy")
+
+# fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True, sharex=True)
+# # y in log scale
+# axes[0].set_yscale("log")
+# axes[1].set_yscale("log")
+# for i, width in enumerate(widths):
+#     axes[i % 2].plot(
+#         model_losses[i],
+#         linestyle="--",
+#         marker="o",
+#         color=f"C{i}",
+#         markersize=4,
+#         alpha=0.5,
+#     )
+#     axes[i % 2].plot(
+#         swa_model_losses[i],
+#         label=f"width {width}",
+#         marker="o",
+#         color=f"C{i}",
+#         markersize=4,
+#         alpha=0.5,
+#     )
+#     axes[i % 2].set_xlabel("Epochs")
+#     axes[i % 2].set_ylabel("Test loss")
+# # common legend
+# # get legent from 0 and 1 axes
+# handles, labels = axes[0].get_legend_handles_labels()
+# # append the legend from the second axes
+# handles += axes[1].get_legend_handles_labels()[0]
+# labels += axes[1].get_legend_handles_labels()[1]
+# # add the legend
+# axes[1].legend(handles, labels, loc="upper right")
+# # title
+# axes[0].set_title("SWA vs. model loss")
+# # save the figure
+# fig.savefig("swa_losses.png", dpi=600, bbox_inches="tight")

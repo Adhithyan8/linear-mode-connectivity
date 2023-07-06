@@ -377,6 +377,81 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 
 #     return model
 
+
+# given ref_model and model, realign model using custom loss
+def custom_wm(ref_model, model):
+    width = ref_model.layers[0].weight.shape[0]
+    # compute cost
+    cost = torch.zeros((width, width)).to(device)
+    cost += torch.maximum(
+        (
+            torch.matmul(ref_model.layers[0].weight, ref_model.layers[0].weight.T) * 0.1
+            + torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
+        )
+        / 2,
+        (
+            torch.matmul(model.layers[0].weight, model.layers[0].weight.T) * 0.1
+            + torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
+        )
+        / 2,
+    )
+    cost += torch.maximum(
+        (
+            torch.matmul(
+                ref_model.layers[0].bias.unsqueeze(1),
+                ref_model.layers[0].bias.unsqueeze(0),
+            )
+            * 0.1
+            + torch.matmul(
+                ref_model.layers[0].bias.unsqueeze(1),
+                model.layers[0].bias.unsqueeze(0),
+            )
+        )
+        / 2,
+        (
+            torch.matmul(
+                model.layers[0].bias.unsqueeze(1), model.layers[0].bias.unsqueeze(0)
+            )
+            * 0.1
+            + torch.matmul(
+                ref_model.layers[0].bias.unsqueeze(1),
+                model.layers[0].bias.unsqueeze(0),
+            )
+        )
+        / 2,
+    )
+    cost += torch.maximum(
+        (
+            torch.matmul(ref_model.layers[1].weight.T, ref_model.layers[1].weight) * 0.1
+            + torch.matmul(ref_model.layers[1].weight.T, model.layers[1].weight)
+        )
+        / 2,
+        (
+            torch.matmul(model.layers[1].weight.T, model.layers[1].weight) * 0.1
+            + torch.matmul(ref_model.layers[1].weight.T, model.layers[1].weight)
+        )
+        / 2,
+    )
+
+    # get permutation using hungarian algorithm
+    row_ind, col_ind = linear_sum_assignment(cost.cpu().detach().numpy(), maximize=True)
+    perm = torch.zeros(cost.shape).to(device)
+    perm[row_ind, col_ind] = 1
+
+    # realign model
+    model.layers[0].weight = torch.nn.Parameter(
+        torch.matmul(perm, model.layers[0].weight)
+    )
+    model.layers[0].bias = torch.nn.Parameter(
+        torch.matmul(perm, model.layers[0].bias.unsqueeze(1)).squeeze()
+    )
+    model.layers[1].weight = torch.nn.Parameter(
+        torch.matmul(model.layers[1].weight, perm.T)
+    )
+
+    return model
+
+
 # for w in widths:
 #     ref_model = FCNet(2, w, 1, 1).to(device)
 #     ref_model.load_state_dict(torch.load(f"models/moons/model_w{w}_0.pth"))
@@ -387,8 +462,8 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 #         model.load_state_dict(torch.load(f"models/moons/model_w{w}_{i}.pth"))
 #         model.eval()
 
-#         model = weight_matching(ref_model, model)
-#         torch.save(model.state_dict(), f"models/moons/perm_model_w{w}_{i}.pth")
+#         model = custom_wm(ref_model, model)
+#         torch.save(model.state_dict(), f"models/moons/perm_cust_model_w{w}_{i}.pth")
 
 # for width in widths:
 #     models = []
@@ -397,7 +472,9 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 #     models.append(ref_model)
 #     for i in range(1, num_models):
 #         model = FCNet(2, width, 1, 1).to(device)
-#         model.load_state_dict(torch.load(f"models/moons/perm_model_w{width}_{i}.pth"))
+#         model.load_state_dict(
+#             torch.load(f"models/moons/perm_cust_model_w{width}_{i}.pth")
+#         )
 #         models.append(model)
 
 #     for data in ["train", "test"]:
@@ -435,15 +512,15 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 #                     max_barriers[i, j] = max(int_losses[i, j, :])
 
 #         np.save(
-#             f"logs/moons/perm_int_losses_{data}_w{width}",
+#             f"logs/moons/perm_cust_int_losses_{data}_w{width}",
 #             int_losses,
 #         )
 #         np.save(
-#             f"logs/moons/perm_barriers_{data}_w{width}",
+#             f"logs/moons/perm_cust_barriers_{data}_w{width}",
 #             barriers,
 #         )
 #         np.save(
-#             f"logs/moons/perm_max_barriers_{data}_w{width}",
+#             f"logs/moons/perm_cust_max_barriers_{data}_w{width}",
 #             max_barriers,
 #         )
 
@@ -453,7 +530,7 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 #     fig, axes = plt.subplots(3, 2, figsize=(7, 8), sharex=True, sharey=True)
 
 #     for i, width in enumerate(widths):
-#         int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
+#         int_losses = np.load(f"logs/moons/perm_cust_int_losses_{data}_w{width}.npy")
 
 #         # compute mean values (average across dim 0 and 1)
 #         int_losses_mean = int_losses.mean(axis=(0, 1))
@@ -509,15 +586,27 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 #     # tight layout
 #     fig.tight_layout()
 #     # save
-#     plt.savefig(f"perm_interpolation_losses_{data}.png", dpi=600)
+#     plt.savefig(f"perm_cust_interpolation_losses_{data}.png", dpi=600)
 
 # visualize perm interpolation losses
-epsilon = np.zeros((50 * 50, 6))
+epsilon = np.zeros((int((50 * 49) / 2), 6))
 for data in ["test"]:
     for i, width in enumerate(widths):
-        int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
-        # max value as epsilon
-        epsilon[:, i] = int_losses.max(axis=(2)).flatten()
+        int_losses = np.load(f"logs/moons/perm_cust_int_losses_{data}_w{width}.npy")
+        idx = 0
+        for j in range(int_losses.shape[0]):
+            for k in range(int_losses.shape[1]):
+                if j == k:
+                    continue
+                if j > k:
+                    continue
+                if j < k:
+                    epsilon[idx, i] = int_losses[j, k, :].max() - max(
+                        int_losses[j, k, 0], int_losses[j, k, -1]
+                    )
+                    idx += 1
+                else:
+                    continue
 
 # visualize
 fig, ax = plt.subplots(1, 1, figsize=(7, 4))
@@ -530,7 +619,7 @@ ax.violinplot(
     showmeans=True,
     showextrema=False,
     widths=np.array(widths) / 5,
-    showmedians=False,
+    showmedians=True,
 )
 # plot mean as line
 ax.plot(
@@ -542,6 +631,16 @@ ax.plot(
     label="mean",
     linestyle="dashed",
 )
+# plot median as line
+ax.plot(
+    widths,
+    np.median(epsilon, axis=0),
+    color="blue",
+    marker="o",
+    markersize=2,
+    label="median",
+    linestyle="dotted",
+)
 # set x axis label
 ax.set_xlabel("width")
 # set x axis ticks
@@ -551,7 +650,7 @@ ax.set_xticklabels(widths)
 # set x axis limits
 ax.set_xlim(3.5, 580)
 # set y axis limits
-ax.set_ylim(0, 1)
+ax.set_ylim(0, 0.2)
 # set y axis label
 ax.set_ylabel("$\\epsilon$")
 # grid
@@ -559,11 +658,11 @@ ax.grid()
 # set legend
 ax.legend(loc="upper right")
 # set suptitle
-fig.suptitle("$\\epsilon$-linear mode connectivity upto permutation")
+fig.suptitle("$\\epsilon$-linear mode connectivity in SWA samples")
 # tight layout
 # fig.tight_layout()
 # save
-plt.savefig(f"perm_epsilon.png", dpi=600)
+plt.savefig(f"perm_cust_epsilon.png", dpi=600)
 
 # # visualize naive interpolation losses zoomed in
 # for data in ["train", "test"]:
@@ -571,7 +670,7 @@ plt.savefig(f"perm_epsilon.png", dpi=600)
 #     fig, axes = plt.subplots(1, 2, figsize=(10, 5), sharex=True, sharey=True)
 
 #     for i, width in enumerate([128, 512]):
-#         int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
+#         int_losses = np.load(f"logs/moons/perm_cust_int_losses_{data}_w{width}.npy")
 
 #         # compute mean values (average across dim 0 and 1)
 #         int_losses_mean = int_losses.mean(axis=(0, 1))
@@ -623,7 +722,7 @@ plt.savefig(f"perm_epsilon.png", dpi=600)
 #     # tight layout
 #     fig.tight_layout()
 #     # save
-#     plt.savefig(f"zoomed_perm_interpolation_losses_{data}.png", dpi=600)
+#     plt.savefig(f"zoomed_perm_cust_interpolation_losses_{data}.png", dpi=600)
 
 
 # given a model, return indices and fraction nodes whose relative contribution is less than 95%
@@ -758,7 +857,19 @@ def pad_models(model1, model2):
     return model1, model2
 
 
-# for width in [512]:
+# widths = [4, 8, 16, 32, 128, 512]
+# num_models = 21
+
+# for width in widths:
+#     models = []
+#     model = FCNet(input_size=2, width=width, depth=1, output_size=1).to(device)
+#     model.load_state_dict(torch.load(f"models/moons/model_w{width}_0.pth"))
+#     models.append(model)
+#     for i in range(num_models - 1):
+#         model = FCNet(input_size=2, width=width, depth=1, output_size=1).to(device)
+#         model.load_state_dict(torch.load(f"models/moons/swain_w{width}_{i}.pth"))
+#         models.append(model)
+
 #     for data in ["train", "test"]:
 #         # choose loader
 #         if data == "train":
@@ -787,32 +898,32 @@ def pad_models(model1, model2):
 #                     max_barriers[i, j] = max_barriers[j, i]
 #                     continue
 #                 if i < j:
-#                     red_model_i, red_model_j = pad_models(models[i], models[j])
 #                     int_losses[i, j, :] = interpolation_losses(
-#                         red_model_i, red_model_j, loader
+#                         models[i], models[j], loader
 #                     )
 #                     barriers[i, j] = loss_barrier(int_losses[i, j, :])
 #                     max_barriers[i, j] = max(int_losses[i, j, :])
 
 #         np.save(
-#             f"logs/moons/naive_int_losses_{data}_red_w{width}",
+#             f"logs/moons/naive_int_losses_{data}_swa_w{width}",
 #             int_losses,
 #         )
 #         np.save(
-#             f"logs/moons/naive_barriers_{data}_red_w{width}",
+#             f"logs/moons/naive_barriers_{data}_swa_w{width}",
 #             barriers,
 #         )
 #         np.save(
-#             f"logs/moons/naive_max_barriers_{data}_red_w{width}",
+#             f"logs/moons/naive_max_barriers_{data}_swa_w{width}",
 #             max_barriers,
 #         )
 
 # # visualize naive interpolation losses
-# # create 3*2 subplots
-# fig, axes = plt.subplots(1, 2, figsize=(10, 5), sharex=True, sharey=True)
-# for i, data in enumerate(["train", "test"]):
-#     for width in [512]:
-#         int_losses = np.load(f"logs/moons/naive_int_losses_{data}_red_w{width}.npy")
+# for data in ["train", "test"]:
+#     # create 3*2 subplots
+#     fig, axes = plt.subplots(3, 2, figsize=(7, 8), sharex=True)
+
+#     for i, width in enumerate(widths):
+#         int_losses = np.load(f"logs/moons/naive_int_losses_{data}_swa_w{width}.npy")
 
 #         # compute mean values (average across dim 0 and 1)
 #         int_losses_mean = int_losses.mean(axis=(0, 1))
@@ -823,7 +934,68 @@ def pad_models(model1, model2):
 #         # plot individual losses as lines in same subplot
 #         for j in range(int_losses.shape[0]):
 #             for k in range(int_losses.shape[1]):
-#                 axes[i].plot(int_losses[j, k], color="grey", linewidth=0.5, alpha=0.1)
+#                 axes[i // 2, i % 2].plot(
+#                     int_losses[j, k], linewidth=0.5, color="grey", alpha=0.1
+#                 )
+#         # plot mean as line in same subplot
+#         axes[i // 2, i % 2].plot(
+#             int_losses_mean, color="red", linewidth=2, label="mean"
+#         )
+#         # show standard deviation as lines around mean
+#         axes[i // 2, i % 2].plot(
+#             int_losses_mean + int_losses_std,
+#             color="red",
+#             linewidth=1,
+#             linestyle="--",
+#         )
+#         axes[i // 2, i % 2].plot(
+#             int_losses_mean - int_losses_std,
+#             color="red",
+#             linewidth=1,
+#             linestyle="--",
+#         )
+#         # set x axis label
+#         axes[i // 2, i % 2].set_xlabel("$\\alpha$")
+#         # set x axis ticks (0 to 1 in steps of 0.2)
+#         axes[i // 2, i % 2].set_xticks(np.arange(0, 11, 2))
+#         # set x axis tick labels (0 to 1 in steps of 0.1)
+#         axes[i // 2, i % 2].set_xticklabels([f"{i / 10:.1f}" for i in range(0, 11, 2)])
+#         # set x axis limits
+#         axes[i // 2, i % 2].set_xlim(0, 10)
+#         # set y axis label
+#         axes[i // 2, i % 2].set_ylabel("loss")
+#         # set title
+#         axes[i // 2, i % 2].set_title(f"width {width}")
+#         # grid
+#         axes[i // 2, i % 2].grid()
+
+#     # set legend
+#     axes[0, 0].legend(loc="upper right")
+
+#     # set suptitle
+#     fig.suptitle(f"Interpolation between SWA samples: {data} loss")
+#     # tight layout
+#     fig.tight_layout()
+#     # save
+#     plt.savefig(f"swa_interpolation_losses_{data}.png", dpi=600)
+
+# # visualize naive interpolation losses
+# # create 3*2 subplots
+# fig, axes = plt.subplots(1, 2, figsize=(10, 5), sharex=True, sharey=True)
+# for i, data in enumerate(["train", "test"]):
+#     for width in [512]:
+#         int_losses = np.load(f"logs/moons/naive_int_losses_{data}_swa_w{width}.npy")
+
+#         # compute mean values (average across dim 0 and 1)
+#         int_losses_mean = int_losses.mean(axis=(0, 1))
+
+#         # compute standard deviations (average across dim 0 and 1)
+#         int_losses_std = int_losses.std(axis=(0, 1))
+
+#         # plot individual losses as lines in same subplot
+#         for j in range(int_losses.shape[0]):
+#             for k in range(int_losses.shape[1]):
+#                 axes[i].plot(int_losses[j, k], color="grey", linewidth=0.5, alpha=0.2)
 #         # plot mean as line in same subplot
 #         axes[i].plot(int_losses_mean, color="red", linewidth=2, label="mean")
 #         # show standard deviation as lines around mean
@@ -850,7 +1022,7 @@ def pad_models(model1, model2):
 #         # set y axis label
 #         axes[i].set_ylabel("loss")
 #         # set y axis limits
-#         axes[i].set_ylim(0, 2)
+#         axes[i].set_ylim(0, 0.25)
 #         # set title
 #         axes[i].set_title(f"{data} data")
 #         # grid
@@ -860,8 +1032,8 @@ def pad_models(model1, model2):
 #     axes[i].legend(loc="upper right")
 
 # # set suptitle
-# fig.suptitle("Naive interpolation for reduced model width 512")
+# fig.suptitle("Naive interpolation between SWA samples (width=512)")
 # # tight layout
 # fig.tight_layout()
 # # save
-# plt.savefig(f"naive_interpolation_losses_{data}_red_w512.png", dpi=600)
+# plt.savefig(f"naive_interpolation_losses_{data}_swa_w512.png", dpi=600)
