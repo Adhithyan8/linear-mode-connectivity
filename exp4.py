@@ -65,6 +65,133 @@ for key in model1.state_dict():
     average_state_dict[key] = (model1.state_dict()[key] + model2.state_dict()[key]) / 2
 average_model.load_state_dict(average_state_dict)
 
+# # plotting neurons
+# idx1 = 42
+# idx2 = 16
+# width = 512
+
+# model1 = FCNet(2, width, 1, 1)
+# model2 = FCNet(2, width, 1, 1)
+# model1.load_state_dict(torch.load(f"models/moons/perm_model_w{width}_{idx1}.pth"))
+# model2.load_state_dict(torch.load(f"models/moons/perm_model_w{width}_{idx2}.pth"))
+
+# w_in1 = model1.layers[0].weight.detach().cpu().numpy()
+# b_in1 = model1.layers[0].bias.detach().cpu().numpy()
+# w_out1 = model1.layers[1].weight.detach().cpu().numpy()
+# w_in2 = model2.layers[0].weight.detach().cpu().numpy()
+# b_in2 = model2.layers[0].bias.detach().cpu().numpy()
+# w_out2 = model2.layers[1].weight.detach().cpu().numpy()
+# x1 = np.linspace(-3, 3, 100)
+# x2 = np.linspace(-3, 3, 100)
+
+
+# for j in range(width):
+#     # plotting
+#     fig, axs = plt.subplots(1, 2)
+
+#     # set titles for each row
+#     axs[0].set_title(f"model {idx1}")
+#     axs[1].set_title(f"model {idx2}")
+#     # x and y limits
+#     axs[0].set_xlim(-3, 3)
+#     axs[0].set_ylim(-3, 3)
+#     axs[1].set_xlim(-3, 3)
+#     axs[1].set_ylim(-3, 3)
+
+#     axs[0].plot(
+#         x1,
+#         -(w_in1[j, 0] * x1 + b_in1[j]) / w_in1[j, 1],
+#         linestyle="dashed",
+#         linewidth=5,
+#         alpha=np.sqrt(np.linalg.norm(w_in1[j]) ** 2 + b_in1[j] ** 2) / 10,
+#         c="black",
+#     )
+#     axs[1].plot(
+#         x1,
+#         -(w_in2[j, 0] * x1 + b_in2[j]) / w_in2[j, 1],
+#         linestyle="dashed",
+#         linewidth=5,
+#         alpha=np.sqrt(np.linalg.norm(w_in2[j]) ** 2 + b_in2[j] ** 2) / 10,
+#         c="black",
+#     )
+
+#     # plot data
+#     axs[0].scatter(
+#         X_train[:50, 0], X_train[:50, 1], c=y_train[:50], cmap="coolwarm", s=4
+#     )
+#     axs[1].scatter(
+#         X_train[:50, 0], X_train[:50, 1], c=y_train[:50], cmap="coolwarm", s=4
+#     )
+
+#     # color in the halfspaces based on the output weights
+#     val = w_in1[j, 1] < 0
+#     if val:
+#         y_lim = 3
+#     else:
+#         y_lim = -3
+
+#     if w_out1[:, j] > 0:
+#         axs[0].fill_between(
+#             x1,
+#             -(w_in1[j, 0] * x1 + b_in1[j]) / w_in1[j, 1],
+#             y_lim,
+#             color="red",
+#             alpha=np.abs(w_out1[:, j]) / 10,
+#         )
+#     else:
+#         axs[0].fill_between(
+#             x1,
+#             -(w_in1[j, 0] * x1 + b_in1[j]) / w_in1[j, 1],
+#             y_lim,
+#             color="blue",
+#             alpha=np.abs(w_out1[:, j]) / 10,
+#         )
+
+#     val = w_in2[j, 1] < 0
+#     if val:
+#         y_lim = 3
+#     else:
+#         y_lim = -3
+
+#     if w_out2[:, j] > 0:
+#         axs[1].fill_between(
+#             x1,
+#             -(w_in2[j, 0] * x1 + b_in2[j]) / w_in2[j, 1],
+#             y_lim,
+#             color="red",
+#             alpha=np.abs(w_out2[:, j]) / 10,
+#         )
+#     else:
+#         axs[1].fill_between(
+#             x1,
+#             -(w_in2[j, 0] * x1 + b_in2[j]) / w_in2[j, 1],
+#             y_lim,
+#             color="blue",
+#             alpha=np.abs(w_out2[:, j]) / 10,
+#         )
+
+#     # aspec ratio
+#     axs[0].set_aspect("equal")
+#     axs[1].set_aspect("equal")
+
+#     # save figure
+#     fig.savefig(f"models_w{width}_{idx1}_{idx2}_{j}.png")
+#     fig.clf()
+
+
+# # given a cmap, divide it into n colors, and return the colors
+# def get_colors(cmap, n):
+#     colors = []
+#     for i in range(n):
+#         colors.append(cmap(i / n))
+#     return colors
+
+
+# # test
+# colors = get_colors(plt.cm.coolwarm, 10)
+# print(colors)
+
+
 # # plot all three for all three models
 # fig, axs = plt.subplots(1, 2)
 
@@ -275,28 +402,47 @@ def get_low_norm_nodes(model):
     return low_norm_indices, low_norm_fraction
 
 
-# visualize perm interpolation losses
-widths = [4, 8, 16, 32, 128, 512]
+# # visualize perm interpolation losses
+# widths = [4, 8, 16, 32, 128, 512]
 
+# epsilon = np.zeros((50, 50, 6))
+# for data in ["test"]:
+#     for i, width in enumerate(widths):
+#         int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
+#         for j in range(int_losses.shape[0]):
+#             for k in range(int_losses.shape[1]):
+#                 if j == k:
+#                     continue
+#                 if j > k:
+#                     epsilon[j, k, i] = epsilon[k, j, i]
+#                 if j < k:
+#                     epsilon[j, k, i] = int_losses[j, k, :].max() - max(
+#                         int_losses[j, k, 0], int_losses[j, k, -1]
+#                     )
 
-epsilon = np.zeros((50, 50, 6))
-for data in ["test"]:
-    for i, width in enumerate(widths):
-        int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
-        for j in range(int_losses.shape[0]):
-            for k in range(int_losses.shape[1]):
-                if j == k:
-                    continue
-                if j > k:
-                    epsilon[j, k, i] = epsilon[k, j, i]
-                if j < k:
-                    epsilon[j, k, i] = int_losses[j, k, :].max() - max(
-                        int_losses[j, k, 0], int_losses[j, k, -1]
-                    )
+#         g = sns.clustermap(
+#             epsilon[:, :, i],
+#             cmap="rocket",
+#             vmin=0,
+#             vmax=0.2,
+#             xticklabels=True,
+#             yticklabels=True,
+#             figsize=(16, 16),
+#             cbar_kws={"label": "$\epsilon$"},
+#             metric="euclidean",
+#             method="single",
+#         )
+#         # save the figure
+#         g.ax_row_dendrogram.set_visible(True)
+#         g.ax_col_dendrogram.set_visible(True)
+#         # hide the colorbar
+#         g.cax.set_visible(True)
+#         # save the figure
+#         g.savefig(f"perm_sim_w{width}.png", dpi=600, bbox_inches="tight")
 
 # # plot the cosine similarity between incoming weights of node-node pairs
 # # plot the weights
-# for i, model in enumerate([model2]):
+# for i, model in enumerate([model1, model2]):
 #     model.eval().to(device)
 #     w_in = model.layers[0].weight.detach().cpu().numpy()
 #     b_in = model.layers[0].bias.detach().cpu().numpy()
@@ -364,8 +510,68 @@ for data in ["test"]:
 #     vmax=1.0,
 #     xticklabels=False,
 #     yticklabels=False,
-#     figsize=(8, 8),
+#     figsize=(16, 16),
 #     cbar_kws={"label": "cosine similarity"},
+#     metric="euclidean",
+#     method="single",
+# )
+# # save the figure
+# g.ax_row_dendrogram.set_visible(True)
+# g.ax_col_dendrogram.set_visible(True)
+# # hide the colorbar
+# g.cax.set_visible(False)
+# # save the figure
+# g.savefig(f"moons_w{width}_sim_{i}.png", dpi=600, bbox_inches="tight")
+
+# plot the epsilon matrix
+
+# for i, width in enumerate(widths):
+#     # Instantiate topological transformer
+#     VR = VietorisRipsPersistence(
+#         metric="precomputed", homology_dimensions=[0], n_jobs=-1
+#     )
+
+#     # Calculate persistence diagrams
+#     diagrams = VR.fit_transform(np.array([epsilon[:, :, i]]))
+
+#     # Instantiate Betti curve transformer
+#     Betti = BettiCurve()
+#     curves = Betti.fit_transform(diagrams)
+
+#     # Plot Betti curves
+#     # set plotly params so y axis is log scale and grid is ON
+#     fig = Betti.plot(
+#         curves,
+#         plotly_params={
+#             "layout": {
+#                 "yaxis_type": "log",
+#                 "yaxis_gridcolor": "grey",
+#                 "xaxis_gridcolor": "grey",
+#                 # title
+#                 "title": f"Clustering models",
+#             }
+#         },
+#     )
+#     # save the plotly figure
+#     fig.write_image(f"perm_sim_betti_w{width}.png", width=800, height=800)
+
+#     # Plot persistence diagrams
+#     fig1 = VR.plot(
+#         diagrams, plotly_params={"layout": {"title": f"Persistence diagram"}}
+#     )
+
+#     # save the plotly figure
+#     fig1.write_image(f"perm_sim_persistence_w{width}.png", width=800, height=800)
+
+# g = sns.clustermap(
+#     epsilon[:, :, i],
+#     cmap="rocket",
+#     vmin=0,
+#     vmax=1.0,
+#     xticklabels=False,
+#     yticklabels=False,
+#     figsize=(8, 8),
+#     cbar_kws={"label": "$\epsilon$"},
 #     metric="euclidean",
 #     method="single",
 # )
@@ -375,67 +581,7 @@ for data in ["test"]:
 # # hide the colorbar
 # g.cax.set_visible(False)
 # # save the figure
-# g.savefig(f"moons_w512_sim_{i}.png", dpi=600, bbox_inches="tight")
-
-# plot the epsilon matrix
-
-for i, width in enumerate(widths):
-    # Instantiate topological transformer
-    VR = VietorisRipsPersistence(
-        metric="precomputed", homology_dimensions=[0], n_jobs=-1
-    )
-
-    # Calculate persistence diagrams
-    diagrams = VR.fit_transform(np.array([epsilon[:, :, i]]))
-
-    # Instantiate Betti curve transformer
-    Betti = BettiCurve()
-    curves = Betti.fit_transform(diagrams)
-
-    # Plot Betti curves
-    # set plotly params so y axis is log scale and grid is ON
-    fig = Betti.plot(
-        curves,
-        plotly_params={
-            "layout": {
-                "yaxis_type": "log",
-                "yaxis_gridcolor": "grey",
-                "xaxis_gridcolor": "grey",
-                # title
-                "title": f"Clustering models",
-            }
-        },
-    )
-    # save the plotly figure
-    fig.write_image(f"perm_sim_betti_w{width}.png", width=800, height=800)
-
-    # Plot persistence diagrams
-    fig1 = VR.plot(
-        diagrams, plotly_params={"layout": {"title": f"Persistence diagram"}}
-    )
-
-    # save the plotly figure
-    fig1.write_image(f"perm_sim_persistence_w{width}.png", width=800, height=800)
-
-    # g = sns.clustermap(
-    #     epsilon[:, :, i],
-    #     cmap="rocket",
-    #     vmin=0,
-    #     vmax=1.0,
-    #     xticklabels=False,
-    #     yticklabels=False,
-    #     figsize=(8, 8),
-    #     cbar_kws={"label": "$\epsilon$"},
-    #     metric="euclidean",
-    #     method="single",
-    # )
-    # # save the figure
-    # g.ax_row_dendrogram.set_visible(False)
-    # g.ax_col_dendrogram.set_visible(False)
-    # # hide the colorbar
-    # g.cax.set_visible(False)
-    # # save the figure
-    # g.savefig(f"naive_sim_w{width}.png", dpi=600, bbox_inches="tight")
+# g.savefig(f"naive_sim_w{width}.png", dpi=600, bbox_inches="tight")
 
 
 def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99):

@@ -329,6 +329,33 @@ def evaluate(model, loader):
     return loss / len(loader), accuracy / len(loader)
 
 
+def evaluate_multiclass(model, loader):
+    # initialize the loss
+    loss = 0
+    # initialize the accuracy
+    accuracy = 0
+
+    # for each batch
+    for X, y in loader:
+        # move the data to the device
+        X = X.to(device)
+        y = y.to(device)
+
+        # compute the loss
+        loss += F.cross_entropy(model(X), y).item()
+
+        # compute the batchwise accuracy
+        accuracy += torch.mean(
+            torch.eq(
+                torch.argmax(model(X), dim=1),
+                y,
+            ).float()
+        ).item()
+
+    # return the loss and accuracy
+    return loss / len(loader), accuracy / len(loader)
+
+
 # given 2 models and loaders, return a np array of interpolation losses
 def interpolation_losses(model1, model2, loader, num_points=11):
     # get the state dicts
@@ -460,3 +487,102 @@ def plotter(model1, model2, average_model, width, loader, title):
 
     # save
     plt.savefig(f"{title}.png", dpi=300)
+
+
+def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99):
+    # get the weights
+    w_in = model.layers[0].weight.detach().cpu().numpy()
+    b_in = model.layers[0].bias.detach().cpu().numpy()
+    w_out = model.layers[1].weight.detach().cpu().numpy()
+    b_out = model.layers[1].bias.detach().cpu().numpy()
+
+    # remove nodes that share high node-node similarity
+    # add bias as column to w_in
+    w_in_vec = np.hstack((w_in, b_in.reshape(-1, 1)))
+
+    # get cosine similarity between incoming weights of node-node pairs
+    sim = (
+        w_in_vec
+        @ w_in_vec.T
+        / (
+            (
+                np.linalg.norm(w_in_vec, axis=1).reshape(-1, 1)
+                @ np.linalg.norm(w_in_vec, axis=1).reshape(1, -1)
+            )
+        )
+    )
+    # consider only upper triangular part and rest as -2
+    sim = np.triu(sim, k=1) + np.tril(np.ones_like(sim) * -2, k=0)
+
+    # keep track to nodes considered
+    num_nodes_considered = 0
+
+    # loop until all nodes are either kept or removed
+    while num_nodes_considered < len(w_in):
+        # get the highest similarity pair
+        i, j = np.unravel_index(np.argmax(sim), sim.shape)
+        # within [i, :], [:, i], find j with sim > sim_threshold
+        j_0 = np.where(sim[i, :] > sim_threshold)[0]
+        j_1 = np.where(sim[:, i] > sim_threshold)[0]
+        # union of j_0, j_1
+        j_indices = set(j_0).union(set(j_1))
+        # keeping i, remove j, k
+        w_in = np.delete(w_in, list(j_indices), axis=0)
+        b_in = np.delete(b_in, list(j_indices), axis=0)
+        # updating w_out
+        v1 = w_out[:, i]
+        v2 = w_out[:, list(j_indices)]
+        n1 = w_in_vec[i, :]
+        n2 = w_in_vec[list(j_indices), :]
+        lamb = np.linalg.norm(v1) / np.linalg.norm(v2, axis=0)
+        w_out[:, i] = v1 + np.sum(lamb.reshape(1, -1) * v2, axis=1)
+        w_out = np.delete(w_out, list(j_indices), axis=1)
+        # update w_in_vec
+        w_in_vec = np.delete(w_in_vec, list(j_indices), axis=0)
+        # update sim
+        sim = np.delete(sim, list(j_indices), axis=0)
+        sim = np.delete(sim, list(j_indices), axis=1)
+        # update num_nodes_considered
+        num_nodes_considered += len(j_indices) + 1
+
+    # print(f"number of nodes: {len(w_in)}")
+
+    # remove low w_out norm nodes
+    low_norm_indices = set()
+    # get the norm of w_out
+    w_out_norm = np.linalg.norm(w_out, axis=0)
+    # get the indices of nodes with norm < threshold
+    low_norm_indices = low_norm_indices.union(
+        set(np.where(w_out_norm < out_threshold)[0])
+    )
+    # get the norm of w_in_vec
+    w_in_norm = np.linalg.norm(w_in_vec, axis=1)
+    # get the indices of nodes with norm < threshold (intersection)
+    low_norm_indices = low_norm_indices.intersection(
+        set(np.where(w_in_norm < in_threshold)[0])
+    )
+
+    # remove the nodes
+    w_in = np.delete(w_in, list(low_norm_indices), axis=0)
+    b_in = np.delete(b_in, list(low_norm_indices), axis=0)
+    w_out = np.delete(w_out, list(low_norm_indices), axis=1)
+    # update w_in_vec
+    w_in_vec = np.delete(w_in_vec, list(low_norm_indices), axis=0)
+
+    # print(f"number of nodes: {len(w_in)}")
+
+    # number of remaining nodes
+    num_nodes = w_in.shape[0]
+
+    # create new model
+    reduced_model = FCNet(input_size=2, width=num_nodes, depth=1, output_size=1).to(
+        device
+    )
+
+    # set weights
+    reduced_model.layers[0].weight.data = torch.from_numpy(w_in).float().to(device)
+    reduced_model.layers[0].bias.data = torch.from_numpy(b_in).float().to(device)
+    reduced_model.layers[1].weight.data = torch.from_numpy(w_out).float().to(device)
+    reduced_model.layers[1].bias.data = torch.from_numpy(b_out).float().to(device)
+
+    return reduced_model, num_nodes

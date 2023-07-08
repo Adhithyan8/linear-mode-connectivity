@@ -7,14 +7,16 @@ import numpy as np
 import torch
 from scipy.cluster.hierarchy import leaves_list, linkage
 
-from architecture.MLP import FCNet, train
+from architecture.MLP import FCNet, FCNet_multiclass, train, train_multiclass
 from permute import permute_align
 from utils import (
     evaluate,
+    evaluate_multiclass,
     interpolation_losses,
     loss_barrier,
 )
 from scipy.optimize import linear_sum_assignment
+from torchvision import datasets, transforms
 
 # %%
 # Set the device
@@ -22,161 +24,88 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # config
 widths = [4, 8, 16, 32, 128, 512]
-num_models = 50
-depth = 1
+num_models = 1
+depth = 3
 epochs = 100
 
-# load data from data/moons.npz
-file = np.load("data/moons.npz")
-X_train = file["X_train"]
-y_train = file["y_train"]
-X_test = file["X_test"]
-y_test = file["y_test"]
+# # load data from data/moons.npz
+# file = np.load("data/moons.npz")
+# X_train = file["X_train"]
+# y_train = file["y_train"]
+# X_test = file["X_test"]
+# y_test = file["y_test"]
 
-# define train and test loaders
 train_loader = torch.utils.data.DataLoader(
-    torch.utils.data.TensorDataset(
-        torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float()
+    datasets.MNIST(
+        "data",
+        train=True,
+        download=True,
+        transform=transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+        ),
     ),
-    batch_size=256,
+    batch_size=64,
     shuffle=True,
 )
 test_loader = torch.utils.data.DataLoader(
-    torch.utils.data.TensorDataset(
-        torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float()
+    datasets.MNIST(
+        "data",
+        train=False,
+        transform=transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+        ),
     ),
-    batch_size=256,
-    shuffle=False,
+    batch_size=64,
+    shuffle=True,
 )
 
+# # define train and test loaders
+# train_loader = torch.utils.data.DataLoader(
+#     torch.utils.data.TensorDataset(
+#         torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float()
+#     ),
+#     batch_size=256,
+#     shuffle=True,
+# )
+# test_loader = torch.utils.data.DataLoader(
+#     torch.utils.data.TensorDataset(
+#         torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float()
+#     ),
+#     batch_size=256,
+#     shuffle=False,
+# )
 
-def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99):
-    # get the weights
-    w_in = model.layers[0].weight.detach().cpu().numpy()
-    b_in = model.layers[0].bias.detach().cpu().numpy()
-    w_out = model.layers[1].weight.detach().cpu().numpy()
-    b_out = model.layers[1].bias.detach().cpu().numpy()
 
-    # remove nodes that share high node-node similarity
-    # add bias as column to w_in
-    w_in_vec = np.hstack((w_in, b_in.reshape(-1, 1)))
+for width in widths:
+    # data structure to store losses and accuracies
+    logs = np.zeros((num_models, 4))
 
-    # get cosine similarity between incoming weights of node-node pairs
-    sim = (
-        w_in_vec
-        @ w_in_vec.T
-        / (
-            (
-                np.linalg.norm(w_in_vec, axis=1).reshape(-1, 1)
-                @ np.linalg.norm(w_in_vec, axis=1).reshape(1, -1)
-            )
+    # Define and train many models
+    for i in range(num_models):
+        model = FCNet_multiclass(
+            input_size=784, width=width, depth=depth, output_size=10
         )
-    )
-    # consider only upper triangular part and rest as -2
-    sim = np.triu(sim, k=1) + np.tril(np.ones_like(sim) * -2, k=0)
+        train_multiclass(
+            model,
+            train_loader,
+            epochs=epochs,
+            lr=0.1,
+            model_name=f"mnist/model_w{width}_{i}",
+        )
 
-    # keep track to nodes considered
-    num_nodes_considered = 0
+        # evaluate
+        model.eval()
 
-    # loop until all nodes are either kept or removed
-    while num_nodes_considered < len(w_in):
-        # get the highest similarity pair
-        i, j = np.unravel_index(np.argmax(sim), sim.shape)
-        # within [i, :], [:, i], find j with sim > sim_threshold
-        j_0 = np.where(sim[i, :] > sim_threshold)[0]
-        j_1 = np.where(sim[:, i] > sim_threshold)[0]
-        # union of j_0, j_1
-        j_indices = set(j_0).union(set(j_1))
-        # keeping i, remove j, k
-        w_in = np.delete(w_in, list(j_indices), axis=0)
-        b_in = np.delete(b_in, list(j_indices), axis=0)
-        # updating w_out
-        v1 = w_out[:, i]
-        v2 = w_out[:, list(j_indices)]
-        n1 = w_in_vec[i, :]
-        n2 = w_in_vec[list(j_indices), :]
-        lamb = np.linalg.norm(v1) / np.linalg.norm(v2, axis=0)
-        w_out[:, i] = v1 + np.sum(lamb.reshape(1, -1) * v2, axis=1)
-        w_out = np.delete(w_out, list(j_indices), axis=1)
-        # update w_in_vec
-        w_in_vec = np.delete(w_in_vec, list(j_indices), axis=0)
-        # update sim
-        sim = np.delete(sim, list(j_indices), axis=0)
-        sim = np.delete(sim, list(j_indices), axis=1)
-        # update num_nodes_considered
-        num_nodes_considered += len(j_indices) + 1
+        train_loss, train_acc = evaluate_multiclass(model, train_loader)
+        test_loss, test_acc = evaluate_multiclass(model, test_loader)
 
-    # print(f"number of nodes: {len(w_in)}")
+        logs[i, 0] = train_loss
+        logs[i, 1] = test_loss
+        logs[i, 2] = train_acc
+        logs[i, 3] = test_acc
 
-    # remove low w_out norm nodes
-    low_norm_indices = set()
-    # get the norm of w_out
-    w_out_norm = np.linalg.norm(w_out, axis=0)
-    # get the indices of nodes with norm < threshold
-    low_norm_indices = low_norm_indices.union(
-        set(np.where(w_out_norm < out_threshold)[0])
-    )
-    # get the norm of w_in_vec
-    w_in_norm = np.linalg.norm(w_in_vec, axis=1)
-    # get the indices of nodes with norm < threshold (intersection)
-    low_norm_indices = low_norm_indices.intersection(
-        set(np.where(w_in_norm < in_threshold)[0])
-    )
-
-    # remove the nodes
-    w_in = np.delete(w_in, list(low_norm_indices), axis=0)
-    b_in = np.delete(b_in, list(low_norm_indices), axis=0)
-    w_out = np.delete(w_out, list(low_norm_indices), axis=1)
-    # update w_in_vec
-    w_in_vec = np.delete(w_in_vec, list(low_norm_indices), axis=0)
-
-    # print(f"number of nodes: {len(w_in)}")
-
-    # number of remaining nodes
-    num_nodes = w_in.shape[0]
-
-    # create new model
-    reduced_model = FCNet(input_size=2, width=num_nodes, depth=1, output_size=1).to(
-        device
-    )
-
-    # set weights
-    reduced_model.layers[0].weight.data = torch.from_numpy(w_in).float().to(device)
-    reduced_model.layers[0].bias.data = torch.from_numpy(b_in).float().to(device)
-    reduced_model.layers[1].weight.data = torch.from_numpy(w_out).float().to(device)
-    reduced_model.layers[1].bias.data = torch.from_numpy(b_out).float().to(device)
-
-    return reduced_model, num_nodes
-
-
-# for width in [512]:
-#     # data structure to store losses and accuracies
-#     logs = np.zeros((num_models, 5))
-
-#     # Define and train many models
-#     models = []
-#     for i in range(num_models):
-#         model = FCNet(input_size=2, width=width, depth=depth, output_size=1)
-#         model.load_state_dict(torch.load(f"models/moons/model_w{width}_{i}.pth"))
-#         red_model, num_nodes = reduce_model(
-#             model, sim_threshold=0.99, out_threshold=0.1, in_threshold=0.1
-#         )
-#         models.append(red_model)
-
-#         # evaluate
-#         red_model.eval()
-
-#         train_loss, train_acc = evaluate(red_model, train_loader)
-#         test_loss, test_acc = evaluate(red_model, test_loader)
-
-#         logs[i, 0] = train_loss
-#         logs[i, 1] = test_loss
-#         logs[i, 2] = train_acc
-#         logs[i, 3] = test_acc
-#         logs[i, 4] = num_nodes
-
-#         # save the logs
-#         np.save(f"logs/moons/logs_red_w{width}", logs)
+    # save the logs
+    np.save(f"logs/mnist/logs_w{width}", logs)
 
 # # visualizing model losses and accuracies
 # fig, axes = plt.subplots(1, 2, figsize=(10, 5), sharey=True, sharex=True)
@@ -348,90 +277,16 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 # plt.savefig("model_performance.png", dpi=300)
 
 
-# # given ref model and model, return realigned model
-# def weight_matching(ref_model, model):
-#     width = ref_model.layers[0].weight.shape[0]
-#     # compute cost
-#     cost = torch.zeros((width, width)).to(device)
-#     cost += torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
-#     cost += torch.matmul(
-#         ref_model.layers[0].bias.unsqueeze(1), model.layers[0].bias.unsqueeze(0)
-#     )
-#     cost += torch.matmul(ref_model.layers[1].weight.T, model.layers[1].weight)
-
-#     # get permutation using hungarian algorithm
-#     row_ind, col_ind = linear_sum_assignment(cost.cpu().detach().numpy(), maximize=True)
-#     perm = torch.zeros(cost.shape).to(device)
-#     perm[row_ind, col_ind] = 1
-
-#     # realign model
-#     model.layers[0].weight = torch.nn.Parameter(
-#         torch.matmul(perm, model.layers[0].weight)
-#     )
-#     model.layers[0].bias = torch.nn.Parameter(
-#         torch.matmul(perm, model.layers[0].bias.unsqueeze(1)).squeeze()
-#     )
-#     model.layers[1].weight = torch.nn.Parameter(
-#         torch.matmul(model.layers[1].weight, perm.T)
-#     )
-
-#     return model
-
-
-# given ref_model and model, realign model using custom loss
-def custom_wm(ref_model, model):
+# given ref model and model, return realigned model
+def weight_matching(ref_model, model):
     width = ref_model.layers[0].weight.shape[0]
     # compute cost
     cost = torch.zeros((width, width)).to(device)
-    cost += torch.maximum(
-        (
-            torch.matmul(ref_model.layers[0].weight, ref_model.layers[0].weight.T) * 0.1
-            + torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
-        )
-        / 2,
-        (
-            torch.matmul(model.layers[0].weight, model.layers[0].weight.T) * 0.1
-            + torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
-        )
-        / 2,
+    cost += torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
+    cost += torch.matmul(
+        ref_model.layers[0].bias.unsqueeze(1), model.layers[0].bias.unsqueeze(0)
     )
-    cost += torch.maximum(
-        (
-            torch.matmul(
-                ref_model.layers[0].bias.unsqueeze(1),
-                ref_model.layers[0].bias.unsqueeze(0),
-            )
-            * 0.1
-            + torch.matmul(
-                ref_model.layers[0].bias.unsqueeze(1),
-                model.layers[0].bias.unsqueeze(0),
-            )
-        )
-        / 2,
-        (
-            torch.matmul(
-                model.layers[0].bias.unsqueeze(1), model.layers[0].bias.unsqueeze(0)
-            )
-            * 0.1
-            + torch.matmul(
-                ref_model.layers[0].bias.unsqueeze(1),
-                model.layers[0].bias.unsqueeze(0),
-            )
-        )
-        / 2,
-    )
-    cost += torch.maximum(
-        (
-            torch.matmul(ref_model.layers[1].weight.T, ref_model.layers[1].weight) * 0.1
-            + torch.matmul(ref_model.layers[1].weight.T, model.layers[1].weight)
-        )
-        / 2,
-        (
-            torch.matmul(model.layers[1].weight.T, model.layers[1].weight) * 0.1
-            + torch.matmul(ref_model.layers[1].weight.T, model.layers[1].weight)
-        )
-        / 2,
-    )
+    cost += torch.matmul(ref_model.layers[1].weight.T, model.layers[1].weight)
 
     # get permutation using hungarian algorithm
     row_ind, col_ind = linear_sum_assignment(cost.cpu().detach().numpy(), maximize=True)
@@ -462,7 +317,14 @@ def custom_wm(ref_model, model):
 #         model.load_state_dict(torch.load(f"models/moons/model_w{w}_{i}.pth"))
 #         model.eval()
 
-#         model = custom_wm(ref_model, model)
+#         model, _ = permute_align(
+#             model,
+#             ref_model,
+#             test_loader,
+#             epochs=100,
+#             device=device,
+#         )
+
 #         torch.save(model.state_dict(), f"models/moons/perm_cust_model_w{w}_{i}.pth")
 
 # for width in widths:
@@ -588,81 +450,81 @@ def custom_wm(ref_model, model):
 #     # save
 #     plt.savefig(f"perm_cust_interpolation_losses_{data}.png", dpi=600)
 
-# visualize perm interpolation losses
-epsilon = np.zeros((int((50 * 49) / 2), 6))
-for data in ["test"]:
-    for i, width in enumerate(widths):
-        int_losses = np.load(f"logs/moons/perm_cust_int_losses_{data}_w{width}.npy")
-        idx = 0
-        for j in range(int_losses.shape[0]):
-            for k in range(int_losses.shape[1]):
-                if j == k:
-                    continue
-                if j > k:
-                    continue
-                if j < k:
-                    epsilon[idx, i] = int_losses[j, k, :].max() - max(
-                        int_losses[j, k, 0], int_losses[j, k, -1]
-                    )
-                    idx += 1
-                else:
-                    continue
+# # visualize perm interpolation losses
+# epsilon = np.zeros((int((50 * 49) / 2), 6))
+# for data in ["test"]:
+#     for i, width in enumerate(widths):
+#         int_losses = np.load(f"logs/moons/perm_cust_int_losses_{data}_w{width}.npy")
+#         idx = 0
+#         for j in range(int_losses.shape[0]):
+#             for k in range(int_losses.shape[1]):
+#                 if j == k:
+#                     continue
+#                 if j > k:
+#                     continue
+#                 if j < k:
+#                     epsilon[idx, i] = int_losses[j, k, :].max() - max(
+#                         int_losses[j, k, 0], int_losses[j, k, -1]
+#                     )
+#                     idx += 1
+#                 else:
+#                     continue
 
-# visualize
-fig, ax = plt.subplots(1, 1, figsize=(7, 4))
-# x axis in log scale
-ax.set_xscale("log")
-# plot epsilon as violin plot
-ax.violinplot(
-    epsilon,
-    widths,
-    showmeans=True,
-    showextrema=False,
-    widths=np.array(widths) / 5,
-    showmedians=True,
-)
-# plot mean as line
-ax.plot(
-    widths,
-    epsilon.mean(axis=0),
-    color="blue",
-    marker="o",
-    markersize=2,
-    label="mean",
-    linestyle="dashed",
-)
-# plot median as line
-ax.plot(
-    widths,
-    np.median(epsilon, axis=0),
-    color="blue",
-    marker="o",
-    markersize=2,
-    label="median",
-    linestyle="dotted",
-)
-# set x axis label
-ax.set_xlabel("width")
-# set x axis ticks
-ax.set_xticks(widths)
-# set x axis tick labels
-ax.set_xticklabels(widths)
-# set x axis limits
-ax.set_xlim(3.5, 580)
-# set y axis limits
-ax.set_ylim(0, 0.2)
-# set y axis label
-ax.set_ylabel("$\\epsilon$")
-# grid
-ax.grid()
-# set legend
-ax.legend(loc="upper right")
-# set suptitle
-fig.suptitle("$\\epsilon$-linear mode connectivity in SWA samples")
-# tight layout
-# fig.tight_layout()
-# save
-plt.savefig(f"perm_cust_epsilon.png", dpi=600)
+# # visualize
+# fig, ax = plt.subplots(1, 1, figsize=(7, 4))
+# # x axis in log scale
+# ax.set_xscale("log")
+# # plot epsilon as violin plot
+# ax.violinplot(
+#     epsilon,
+#     widths,
+#     showmeans=True,
+#     showextrema=False,
+#     widths=np.array(widths) / 5,
+#     showmedians=True,
+# )
+# # plot mean as line
+# ax.plot(
+#     widths,
+#     epsilon.mean(axis=0),
+#     color="blue",
+#     marker="o",
+#     markersize=2,
+#     label="mean",
+#     linestyle="dashed",
+# )
+# # plot median as line
+# ax.plot(
+#     widths,
+#     np.median(epsilon, axis=0),
+#     color="blue",
+#     marker="o",
+#     markersize=2,
+#     label="median",
+#     linestyle="dotted",
+# )
+# # set x axis label
+# ax.set_xlabel("width")
+# # set x axis ticks
+# ax.set_xticks(widths)
+# # set x axis tick labels
+# ax.set_xticklabels(widths)
+# # set x axis limits
+# ax.set_xlim(3.5, 580)
+# # set y axis limits
+# ax.set_ylim(0, 0.2)
+# # set y axis label
+# ax.set_ylabel("$\\epsilon$")
+# # grid
+# ax.grid()
+# # set legend
+# ax.legend(loc="upper right")
+# # set suptitle
+# fig.suptitle("$\\epsilon$-linear mode connectivity in SWA samples")
+# # tight layout
+# # fig.tight_layout()
+# # save
+# plt.savefig(f"perm_cust_epsilon.png", dpi=600)
 
 # # visualize naive interpolation losses zoomed in
 # for data in ["train", "test"]:
