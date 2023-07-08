@@ -98,6 +98,7 @@ def train_multiclass(model, train_loader, epochs=100, lr=0.001, model_name="mode
             loss.backward()
             optimizer.step()
         lr_scheduler.step()
+        print(f"Epoch {epoch+1}/{epochs} - loss: {loss.item():.4f}")
 
     # save the model
     torch.save(model.state_dict(), f"models/{model_name}.pth")

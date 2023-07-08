@@ -26,7 +26,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 widths = [4, 8, 16, 32, 128, 512]
 num_models = 1
 depth = 3
-epochs = 100
+epochs = 10
 
 # # load data from data/moons.npz
 # file = np.load("data/moons.npz")
@@ -44,8 +44,10 @@ train_loader = torch.utils.data.DataLoader(
             [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
         ),
     ),
-    batch_size=64,
+    batch_size=256,
     shuffle=True,
+    num_workers=4,
+    pin_memory=True,
 )
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST(
@@ -55,8 +57,10 @@ test_loader = torch.utils.data.DataLoader(
             [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
         ),
     ),
-    batch_size=64,
+    batch_size=256,
     shuffle=True,
+    num_workers=4,
+    pin_memory=True,
 )
 
 # # define train and test loaders
