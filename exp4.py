@@ -10,6 +10,7 @@ from sklearn.cluster import SpectralClustering
 import seaborn as sns
 from gtda.homology import VietorisRipsPersistence
 from gtda.diagrams import BettiCurve, PersistenceLandscape, PersistenceImage
+from torchvision import datasets, transforms
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -19,28 +20,28 @@ warnings.filterwarnings("ignore")
 
 width = 512
 
-# load data from data/moons.npz
-file = np.load("data/moons.npz")
-X_train = file["X_train"]
-y_train = file["y_train"]
-X_test = file["X_test"]
-y_test = file["y_test"]
+# # load data from data/moons.npz
+# file = np.load("data/moons.npz")
+# X_train = file["X_train"]
+# y_train = file["y_train"]
+# X_test = file["X_test"]
+# y_test = file["y_test"]
 
-# define train and test loaders
-train_loader = torch.utils.data.DataLoader(
-    torch.utils.data.TensorDataset(
-        torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float()
-    ),
-    batch_size=256,
-    shuffle=True,
-)
-test_loader = torch.utils.data.DataLoader(
-    torch.utils.data.TensorDataset(
-        torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float()
-    ),
-    batch_size=256,
-    shuffle=False,
-)
+# # define train and test loaders
+# train_loader = torch.utils.data.DataLoader(
+#     torch.utils.data.TensorDataset(
+#         torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float()
+#     ),
+#     batch_size=256,
+#     shuffle=True,
+# )
+# test_loader = torch.utils.data.DataLoader(
+#     torch.utils.data.TensorDataset(
+#         torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float()
+#     ),
+#     batch_size=256,
+#     shuffle=False,
+# )
 
 # choose two random indices from 0 to 49
 idx1 = np.random.randint(0, 50)
@@ -64,6 +65,40 @@ average_state_dict = OrderedDict()
 for key in model1.state_dict():
     average_state_dict[key] = (model1.state_dict()[key] + model2.state_dict()[key]) / 2
 average_model.load_state_dict(average_state_dict)
+
+# config
+widths = [8, 32, 128, 512]
+num_models = 40
+depth = 3
+epochs = 50
+
+train_loader = torch.utils.data.DataLoader(
+    datasets.MNIST(
+        "data",
+        train=True,
+        download=True,
+        transform=transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+        ),
+    ),
+    batch_size=256,
+    shuffle=True,
+    num_workers=4,
+    pin_memory=True,
+)
+test_loader = torch.utils.data.DataLoader(
+    datasets.MNIST(
+        "data",
+        train=False,
+        transform=transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+        ),
+    ),
+    batch_size=256,
+    shuffle=True,
+    num_workers=4,
+    pin_memory=True,
+)
 
 # # plotting neurons
 # idx1 = 42
@@ -402,43 +437,43 @@ def get_low_norm_nodes(model):
     return low_norm_indices, low_norm_fraction
 
 
-# # visualize perm interpolation losses
-# widths = [4, 8, 16, 32, 128, 512]
+# visualize perm interpolation losses
+widths = [32]
 
-# epsilon = np.zeros((50, 50, 6))
-# for data in ["test"]:
-#     for i, width in enumerate(widths):
-#         int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
-#         for j in range(int_losses.shape[0]):
-#             for k in range(int_losses.shape[1]):
-#                 if j == k:
-#                     continue
-#                 if j > k:
-#                     epsilon[j, k, i] = epsilon[k, j, i]
-#                 if j < k:
-#                     epsilon[j, k, i] = int_losses[j, k, :].max() - max(
-#                         int_losses[j, k, 0], int_losses[j, k, -1]
-#                     )
+epsilon = np.zeros((40, 40, len(widths)))
+for data in ["test"]:
+    for i, width in enumerate(widths):
+        int_losses = np.load(f"logs/mnist/perm_cust_int_losses_{data}_w{width}.npy")
+        for j in range(int_losses.shape[0]):
+            for k in range(int_losses.shape[1]):
+                if j == k:
+                    continue
+                if j > k:
+                    epsilon[j, k, i] = epsilon[k, j, i]
+                if j < k:
+                    epsilon[j, k, i] = int_losses[j, k, :].max() - max(
+                        int_losses[j, k, 0], int_losses[j, k, -1]
+                    )
 
-#         g = sns.clustermap(
-#             epsilon[:, :, i],
-#             cmap="rocket",
-#             vmin=0,
-#             vmax=0.2,
-#             xticklabels=True,
-#             yticklabels=True,
-#             figsize=(16, 16),
-#             cbar_kws={"label": "$\epsilon$"},
-#             metric="euclidean",
-#             method="single",
-#         )
-#         # save the figure
-#         g.ax_row_dendrogram.set_visible(True)
-#         g.ax_col_dendrogram.set_visible(True)
-#         # hide the colorbar
-#         g.cax.set_visible(True)
-#         # save the figure
-#         g.savefig(f"perm_sim_w{width}.png", dpi=600, bbox_inches="tight")
+        g = sns.clustermap(
+            epsilon[:, :, i],
+            cmap="rocket",
+            vmin=0,
+            vmax=1.0,
+            xticklabels=False,
+            yticklabels=False,
+            figsize=(8, 8),
+            cbar_kws={"label": "$\epsilon$"},
+            metric="euclidean",
+            method="single",
+        )
+        # save the figure
+        g.ax_row_dendrogram.set_visible(False)
+        g.ax_col_dendrogram.set_visible(False)
+        # hide the colorbar
+        g.cax.set_visible(False)
+        # save the figure
+        g.savefig(f"zoomed_perm_sim_w{width}.png", dpi=600, bbox_inches="tight")
 
 # # plot the cosine similarity between incoming weights of node-node pairs
 # # plot the weights

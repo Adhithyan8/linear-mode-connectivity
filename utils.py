@@ -385,7 +385,7 @@ def interpolation_losses(model1, model2, loader, num_points=11):
         new_model.eval()
 
         # compute the loss
-        loss, _ = evaluate(new_model, loader)
+        loss, _ = evaluate_multiclass(new_model, loader)
 
         # store the loss
         losses[idx] = loss

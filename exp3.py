@@ -23,10 +23,10 @@ from torchvision import datasets, transforms
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # config
-widths = [4, 8, 16, 32, 128, 512]
-num_models = 1
+widths = [32]
+num_models = 40
 depth = 3
-epochs = 10
+epochs = 50
 
 # # load data from data/moons.npz
 # file = np.load("data/moons.npz")
@@ -80,36 +80,36 @@ test_loader = torch.utils.data.DataLoader(
 # )
 
 
-for width in widths:
-    # data structure to store losses and accuracies
-    logs = np.zeros((num_models, 4))
+# for width in widths:
+#     # data structure to store losses and accuracies
+#     logs = np.zeros((num_models, 4))
 
-    # Define and train many models
-    for i in range(num_models):
-        model = FCNet_multiclass(
-            input_size=784, width=width, depth=depth, output_size=10
-        )
-        train_multiclass(
-            model,
-            train_loader,
-            epochs=epochs,
-            lr=0.1,
-            model_name=f"mnist/model_w{width}_{i}",
-        )
+#     # Define and train many models
+#     for i in range(num_models):
+#         model = FCNet_multiclass(
+#             input_size=784, width=width, depth=depth, output_size=10
+#         )
+#         train_multiclass(
+#             model,
+#             train_loader,
+#             epochs=epochs,
+#             lr=0.01,
+#             model_name=f"mnist/model_w{width}_{i}",
+#         )
 
-        # evaluate
-        model.eval()
+#         # evaluate
+#         model.eval()
 
-        train_loss, train_acc = evaluate_multiclass(model, train_loader)
-        test_loss, test_acc = evaluate_multiclass(model, test_loader)
+#         train_loss, train_acc = evaluate_multiclass(model, train_loader)
+#         test_loss, test_acc = evaluate_multiclass(model, test_loader)
 
-        logs[i, 0] = train_loss
-        logs[i, 1] = test_loss
-        logs[i, 2] = train_acc
-        logs[i, 3] = test_acc
+#         logs[i, 0] = train_loss
+#         logs[i, 1] = test_loss
+#         logs[i, 2] = train_acc
+#         logs[i, 3] = test_acc
 
-    # save the logs
-    np.save(f"logs/mnist/logs_w{width}", logs)
+#     # save the logs
+#     np.save(f"logs/mnist/logs_w{width}", logs)
 
 # # visualizing model losses and accuracies
 # fig, axes = plt.subplots(1, 2, figsize=(10, 5), sharey=True, sharex=True)
@@ -244,7 +244,7 @@ for width in widths:
 # # visualizing model losses and accuracies
 # fig, axes = plt.subplots(2, 2, figsize=(5, 7), sharey=True)
 # # title
-# fig.suptitle("2-layer MLPs on moons")
+# fig.suptitle("4-layer MLPs on MNIST")
 
 # # for widths, load the model losses and accuracies and show their stacked histograms
 # train_losses = np.zeros((num_models, len(widths)))
@@ -254,7 +254,7 @@ for width in widths:
 
 # for i, width in enumerate(widths):
 #     model_logs = np.load(
-#         f"logs/moons/logs_w{width}.npy"
+#         f"logs/mnist/logs_w{width}.npy"
 #     )
 #     train_losses[:, i] = model_logs[:, 0]
 #     test_losses[:, i] = model_logs[:, 1]
@@ -284,181 +284,209 @@ for width in widths:
 # given ref model and model, return realigned model
 def weight_matching(ref_model, model):
     width = ref_model.layers[0].weight.shape[0]
-    # compute cost
-    cost = torch.zeros((width, width)).to(device)
-    cost += torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
-    cost += torch.matmul(
-        ref_model.layers[0].bias.unsqueeze(1), model.layers[0].bias.unsqueeze(0)
-    )
-    cost += torch.matmul(ref_model.layers[1].weight.T, model.layers[1].weight)
+    for _ in range(50):
+        for l in range(3):
+            # compute cost
+            cost = torch.zeros((width, width)).to(device)
 
-    # get permutation using hungarian algorithm
-    row_ind, col_ind = linear_sum_assignment(cost.cpu().detach().numpy(), maximize=True)
-    perm = torch.zeros(cost.shape).to(device)
-    perm[row_ind, col_ind] = 1
+            cost = torch.zeros((width, width)).to(device)
+            cost += torch.matmul(
+                ref_model.layers[int(2 * l)].weight, model.layers[int(2 * l)].weight.T
+            )
+            cost += torch.matmul(
+                ref_model.layers[int(2 * l)].bias.unsqueeze(1),
+                model.layers[int(2 * l)].bias.unsqueeze(0),
+            )
+            cost += torch.matmul(
+                ref_model.layers[int(2 * l + 1)].weight.unsqueeze(1),
+                model.layers[int(2 * l + 1)].weight.unsqueeze(0),
+            )
+            cost += torch.matmul(
+                ref_model.layers[int(2 * l + 1)].bias.unsqueeze(1),
+                model.layers[int(2 * l + 1)].bias.unsqueeze(0),
+            )
+            cost += torch.matmul(
+                ref_model.layers[int(2 * (l + 1))].weight.T,
+                model.layers[int(2 * (l + 1))].weight,
+            )
 
-    # realign model
-    model.layers[0].weight = torch.nn.Parameter(
-        torch.matmul(perm, model.layers[0].weight)
-    )
-    model.layers[0].bias = torch.nn.Parameter(
-        torch.matmul(perm, model.layers[0].bias.unsqueeze(1)).squeeze()
-    )
-    model.layers[1].weight = torch.nn.Parameter(
-        torch.matmul(model.layers[1].weight, perm.T)
-    )
+            # get permutation using hungarian algorithm
+            row_ind, col_ind = linear_sum_assignment(
+                cost.cpu().detach().numpy(), maximize=True
+            )
+            perm = torch.zeros(cost.shape).to(device)
+            perm[row_ind, col_ind] = 1
+
+            # realign model
+            model.layers[int(2 * l)].weight = torch.nn.Parameter(
+                torch.matmul(perm, model.layers[int(2 * l)].weight)
+            )
+            model.layers[int(2 * l)].bias = torch.nn.Parameter(
+                torch.matmul(perm, model.layers[int(2 * l)].bias.unsqueeze(1)).squeeze()
+            )
+            # change layer norm just like bias
+            model.layers[int(2 * l + 1)].weight = torch.nn.Parameter(
+                torch.matmul(
+                    perm, model.layers[int(2 * l + 1)].weight.unsqueeze(1)
+                ).squeeze()
+            )
+            model.layers[int(2 * l + 1)].bias = torch.nn.Parameter(
+                torch.matmul(
+                    perm, model.layers[int(2 * l + 1)].bias.unsqueeze(1)
+                ).squeeze()
+            )
+            model.layers[int(2 * (l + 1))].weight = torch.nn.Parameter(
+                torch.matmul(model.layers[int(2 * (l + 1))].weight, perm.T)
+            )
 
     return model
 
 
-# for w in widths:
-#     ref_model = FCNet(2, w, 1, 1).to(device)
-#     ref_model.load_state_dict(torch.load(f"models/moons/model_w{w}_0.pth"))
-#     ref_model.eval()
+for w in widths:
+    ref_model = FCNet_multiclass(784, w, depth, 10).to(device)
+    ref_model.load_state_dict(torch.load(f"models/mnist/model_w{w}_0.pth"))
+    ref_model.eval()
 
-#     for i in range(1, num_models):
-#         model = FCNet(2, w, 1, 1).to(device)
-#         model.load_state_dict(torch.load(f"models/moons/model_w{w}_{i}.pth"))
-#         model.eval()
+    for i in range(1, num_models):
+        model = FCNet_multiclass(784, w, depth, 10).to(device)
+        model.load_state_dict(torch.load(f"models/mnist/model_w{w}_{i}.pth"))
+        model.eval()
 
-#         model, _ = permute_align(
-#             model,
-#             ref_model,
-#             test_loader,
-#             epochs=100,
-#             device=device,
-#         )
+        model, _ = permute_align(
+            model, ref_model, test_loader, epochs=10, device=device
+        )
 
-#         torch.save(model.state_dict(), f"models/moons/perm_cust_model_w{w}_{i}.pth")
+        torch.save(model.state_dict(), f"models/mnist/perm_cust_model_w{w}_{i}.pth")
 
-# for width in widths:
-#     models = []
-#     ref_model = FCNet(2, width, 1, 1).to(device)
-#     ref_model.load_state_dict(torch.load(f"models/moons/model_w{width}_0.pth"))
-#     models.append(ref_model)
-#     for i in range(1, num_models):
-#         model = FCNet(2, width, 1, 1).to(device)
-#         model.load_state_dict(
-#             torch.load(f"models/moons/perm_cust_model_w{width}_{i}.pth")
-#         )
-#         models.append(model)
+for width in widths:
+    models = []
+    ref_model = FCNet_multiclass(784, width, depth, 10).to(device)
+    ref_model.load_state_dict(torch.load(f"models/mnist/model_w{width}_0.pth"))
+    models.append(ref_model)
+    for i in range(1, num_models):
+        model = FCNet_multiclass(784, width, depth, 10).to(device)
+        model.load_state_dict(
+            torch.load(f"models/mnist/perm_cust_model_w{width}_{i}.pth")
+        )
+        models.append(model)
 
-#     for data in ["train", "test"]:
-#         # choose loader
-#         if data == "train":
-#             loader = train_loader
-#         else:
-#             loader = test_loader
+    for data in ["test"]:
+        # choose loader
+        if data == "train":
+            loader = train_loader
+        else:
+            loader = test_loader
 
-#         # data structure to store interpolation losses
-#         int_losses = np.zeros((num_models, num_models, 11))
+        # data structure to store interpolation losses
+        int_losses = np.zeros((num_models, num_models, 11))
 
-#         # data structure to store loss barriers
-#         barriers = np.zeros((num_models, num_models))
+        # data structure to store loss barriers
+        barriers = np.zeros((num_models, num_models))
 
-#         # data structure to store max barrier
-#         max_barriers = np.zeros((num_models, num_models))
+        # data structure to store max barrier
+        max_barriers = np.zeros((num_models, num_models))
 
-#         # compute interpolation loss for each pair of models
-#         # log the results
-#         for i in range(num_models):
-#             for j in range(num_models):
-#                 if i == j:
-#                     continue
-#                 if i > j:
-#                     int_losses[i, j, :] = int_losses[j, i, :]
-#                     barriers[i, j] = barriers[j, i]
-#                     max_barriers[i, j] = max_barriers[j, i]
-#                     continue
-#                 if i < j:
-#                     int_losses[i, j, :] = interpolation_losses(
-#                         models[i], models[j], loader
-#                     )
-#                     barriers[i, j] = loss_barrier(int_losses[i, j, :])
-#                     max_barriers[i, j] = max(int_losses[i, j, :])
+        # compute interpolation loss for each pair of models
+        # log the results
+        for i in range(num_models):
+            for j in range(num_models):
+                if i == j:
+                    continue
+                if i > j:
+                    int_losses[i, j, :] = int_losses[j, i, :]
+                    barriers[i, j] = barriers[j, i]
+                    max_barriers[i, j] = max_barriers[j, i]
+                    continue
+                if i < j:
+                    int_losses[i, j, :] = interpolation_losses(
+                        models[i], models[j], loader
+                    )
+                    barriers[i, j] = loss_barrier(int_losses[i, j, :])
+                    max_barriers[i, j] = max(int_losses[i, j, :])
 
-#         np.save(
-#             f"logs/moons/perm_cust_int_losses_{data}_w{width}",
-#             int_losses,
-#         )
-#         np.save(
-#             f"logs/moons/perm_cust_barriers_{data}_w{width}",
-#             barriers,
-#         )
-#         np.save(
-#             f"logs/moons/perm_cust_max_barriers_{data}_w{width}",
-#             max_barriers,
-#         )
+        np.save(
+            f"logs/mnist/perm_cust_int_losses_{data}_w{width}",
+            int_losses,
+        )
+        np.save(
+            f"logs/mnist/perm_cust_barriers_{data}_w{width}",
+            barriers,
+        )
+        np.save(
+            f"logs/mnist/perm_cust_max_barriers_{data}_w{width}",
+            max_barriers,
+        )
 
-# # visualize naive interpolation losses
-# for data in ["train", "test"]:
-#     # create 3*2 subplots
-#     fig, axes = plt.subplots(3, 2, figsize=(7, 8), sharex=True, sharey=True)
 
-#     for i, width in enumerate(widths):
-#         int_losses = np.load(f"logs/moons/perm_cust_int_losses_{data}_w{width}.npy")
+# visualize naive interpolation losses
+for data in ["test"]:
+    # create 3*2 subplots
+    fig, axes = plt.subplots(2, 2, figsize=(7, 8), sharex=True, sharey=True)
 
-#         # compute mean values (average across dim 0 and 1)
-#         int_losses_mean = int_losses.mean(axis=(0, 1))
+    for i, width in enumerate(widths):
+        int_losses = np.load(f"logs/mnist/perm_cust_int_losses_{data}_w{width}.npy")
 
-#         # compute standard deviations (average across dim 0 and 1)
-#         int_losses_std = int_losses.std(axis=(0, 1))
+        # compute mean values (average across dim 0 and 1)
+        int_losses_mean = int_losses.mean(axis=(0, 1))
 
-#         # plot individual losses as lines in same subplot
-#         for j in range(int_losses.shape[0]):
-#             for k in range(int_losses.shape[1]):
-#                 axes[i // 2, i % 2].plot(
-#                     int_losses[j, k], linewidth=0.5, color="grey", alpha=0.1
-#                 )
-#         # plot mean as line in same subplot
-#         axes[i // 2, i % 2].plot(
-#             int_losses_mean, color="red", linewidth=2, label="mean"
-#         )
-#         # show standard deviation as lines around mean
-#         axes[i // 2, i % 2].plot(
-#             int_losses_mean + int_losses_std,
-#             color="red",
-#             linewidth=1,
-#             linestyle="--",
-#         )
-#         axes[i // 2, i % 2].plot(
-#             int_losses_mean - int_losses_std,
-#             color="red",
-#             linewidth=1,
-#             linestyle="--",
-#         )
-#         # set x axis label
-#         axes[i // 2, i % 2].set_xlabel("$\\alpha$")
-#         # set x axis ticks (0 to 1 in steps of 0.2)
-#         axes[i // 2, i % 2].set_xticks(np.arange(0, 11, 2))
-#         # set x axis tick labels (0 to 1 in steps of 0.1)
-#         axes[i // 2, i % 2].set_xticklabels([f"{i / 10:.1f}" for i in range(0, 11, 2)])
-#         # set x axis limits
-#         axes[i // 2, i % 2].set_xlim(0, 10)
-#         # set y axis label
-#         axes[i // 2, i % 2].set_ylabel("loss")
-#         # set y axis limits
-#         axes[i // 2, i % 2].set_ylim(0, 1)
-#         # set title
-#         axes[i // 2, i % 2].set_title(f"width {width}")
-#         # grid
-#         axes[i // 2, i % 2].grid()
+        # compute standard deviations (average across dim 0 and 1)
+        int_losses_std = int_losses.std(axis=(0, 1))
 
-#     # set legend
-#     axes[0, 0].legend(loc="upper right")
+        # plot individual losses as lines in same subplot
+        for j in range(int_losses.shape[0]):
+            for k in range(int_losses.shape[1]):
+                axes[i // 2, i % 2].plot(
+                    int_losses[j, k], linewidth=0.5, color="grey", alpha=0.1
+                )
+        # plot mean as line in same subplot
+        axes[i // 2, i % 2].plot(
+            int_losses_mean, color="red", linewidth=2, label="mean"
+        )
+        # show standard deviation as lines around mean
+        axes[i // 2, i % 2].plot(
+            int_losses_mean + int_losses_std,
+            color="red",
+            linewidth=1,
+            linestyle="--",
+        )
+        axes[i // 2, i % 2].plot(
+            int_losses_mean - int_losses_std,
+            color="red",
+            linewidth=1,
+            linestyle="--",
+        )
+        # set x axis label
+        axes[i // 2, i % 2].set_xlabel("$\\alpha$")
+        # set x axis ticks (0 to 1 in steps of 0.2)
+        axes[i // 2, i % 2].set_xticks(np.arange(0, 11, 2))
+        # set x axis tick labels (0 to 1 in steps of 0.1)
+        axes[i // 2, i % 2].set_xticklabels([f"{i / 10:.1f}" for i in range(0, 11, 2)])
+        # set x axis limits
+        axes[i // 2, i % 2].set_xlim(0, 10)
+        # set y axis label
+        axes[i // 2, i % 2].set_ylabel("loss")
+        # set y axis limits
+        axes[i // 2, i % 2].set_ylim(0, 6)
+        # set title
+        axes[i // 2, i % 2].set_title(f"width {width}")
+        # grid
+        axes[i // 2, i % 2].grid()
 
-#     # set suptitle
-#     fig.suptitle(f"Interpolation between permuted weights: {data} loss")
-#     # tight layout
-#     fig.tight_layout()
-#     # save
-#     plt.savefig(f"perm_cust_interpolation_losses_{data}.png", dpi=600)
+    # set legend
+    axes[0, 0].legend(loc="upper right")
+
+    # set suptitle
+    fig.suptitle(f"Interpolation between permuted weights: {data} loss")
+    # tight layout
+    fig.tight_layout()
+    # save
+    plt.savefig(f"perm_cust_interpolation_losses_{data}.png", dpi=600)
 
 # # visualize perm interpolation losses
-# epsilon = np.zeros((int((50 * 49) / 2), 6))
+# epsilon = np.zeros((int((40 * 39) / 2), 4))
 # for data in ["test"]:
 #     for i, width in enumerate(widths):
-#         int_losses = np.load(f"logs/moons/perm_cust_int_losses_{data}_w{width}.npy")
+#         int_losses = np.load(f"logs/mnist/perm_int_losses_{data}_w{width}.npy")
 #         idx = 0
 #         for j in range(int_losses.shape[0]):
 #             for k in range(int_losses.shape[1]):
@@ -514,9 +542,9 @@ def weight_matching(ref_model, model):
 # # set x axis tick labels
 # ax.set_xticklabels(widths)
 # # set x axis limits
-# ax.set_xlim(3.5, 580)
+# ax.set_xlim(6, 580)
 # # set y axis limits
-# ax.set_ylim(0, 0.2)
+# ax.set_ylim(0, 8)
 # # set y axis label
 # ax.set_ylabel("$\\epsilon$")
 # # grid
@@ -524,19 +552,19 @@ def weight_matching(ref_model, model):
 # # set legend
 # ax.legend(loc="upper right")
 # # set suptitle
-# fig.suptitle("$\\epsilon$-linear mode connectivity in SWA samples")
+# fig.suptitle("$\\epsilon$-linear mode connectivity")
 # # tight layout
 # # fig.tight_layout()
 # # save
-# plt.savefig(f"perm_cust_epsilon.png", dpi=600)
+# plt.savefig(f"perm_epsilon.png", dpi=600)
 
 # # visualize naive interpolation losses zoomed in
-# for data in ["train", "test"]:
+# for data in ["test"]:
 #     # create 3*2 subplots
 #     fig, axes = plt.subplots(1, 2, figsize=(10, 5), sharex=True, sharey=True)
 
 #     for i, width in enumerate([128, 512]):
-#         int_losses = np.load(f"logs/moons/perm_cust_int_losses_{data}_w{width}.npy")
+#         int_losses = np.load(f"logs/mnist/perm_int_losses_{data}_w{width}.npy")
 
 #         # compute mean values (average across dim 0 and 1)
 #         int_losses_mean = int_losses.mean(axis=(0, 1))
@@ -574,7 +602,7 @@ def weight_matching(ref_model, model):
 #         # set y axis label
 #         axes[i].set_ylabel("loss")
 #         # set y axis limits
-#         axes[i].set_ylim(0, 0.02)
+#         axes[i].set_ylim(0.05, 0.25)
 #         # set title
 #         axes[i].set_title(f"width {width}")
 #         # grid
@@ -588,7 +616,7 @@ def weight_matching(ref_model, model):
 #     # tight layout
 #     fig.tight_layout()
 #     # save
-#     plt.savefig(f"zoomed_perm_cust_interpolation_losses_{data}.png", dpi=600)
+#     plt.savefig(f"zoomed_perm_interpolation_losses_{data}.png", dpi=600)
 
 
 # given a model, return indices and fraction nodes whose relative contribution is less than 95%

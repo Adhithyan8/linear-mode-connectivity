@@ -32,8 +32,10 @@ class FCNet_multiclass(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_size, width))
+        self.layers.append(nn.LayerNorm(width))  # add layer normalization
         for _ in range(depth - 1):
             self.layers.append(nn.Linear(width, width))
+            self.layers.append(nn.LayerNorm(width))  # add layer normalization
         self.layers.append(nn.Linear(width, output_size))
 
     # use ReLU activation for all layers except the last one
@@ -81,7 +83,9 @@ def train_multiclass(model, train_loader, epochs=100, lr=0.001, model_name="mode
     criterion = nn.CrossEntropyLoss()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=0.1, steps_per_epoch=len(train_loader), epochs=epochs
+    )
 
     # Train the model
     model.to(device)
@@ -97,8 +101,7 @@ def train_multiclass(model, train_loader, epochs=100, lr=0.001, model_name="mode
             # backward pass
             loss.backward()
             optimizer.step()
-        lr_scheduler.step()
-        print(f"Epoch {epoch+1}/{epochs} - loss: {loss.item():.4f}")
+            lr_scheduler.step()
 
     # save the model
     torch.save(model.state_dict(), f"models/{model_name}.pth")
