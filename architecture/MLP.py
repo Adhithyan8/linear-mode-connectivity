@@ -42,8 +42,11 @@ class FCNet_multiclass(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # flatten the input
         x = x.view(x.shape[0], -1)
-        for layer in self.layers[:-1]:  # type: ignore # holds submodules in a list
-            x = torch.relu(layer(x))
+        for i, layer in enumerate(self.layers[:-1]):  # type: ignore # holds submodules in a list
+            if i % 2 == 1:
+                x = torch.relu(layer(x))
+            else:
+                x = layer(x)
         x = self.layers[-1](x)
         return x
 

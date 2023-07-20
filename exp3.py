@@ -23,10 +23,10 @@ from torchvision import datasets, transforms
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # config
-widths = [32]
-num_models = 40
+widths = [2, 4, 8, 16, 32, 64, 128, 256, 512]
+num_models = 50
 depth = 3
-epochs = 50
+epochs = 60
 
 # # load data from data/moons.npz
 # file = np.load("data/moons.npz")
@@ -288,8 +288,6 @@ def weight_matching(ref_model, model):
         for l in range(3):
             # compute cost
             cost = torch.zeros((width, width)).to(device)
-
-            cost = torch.zeros((width, width)).to(device)
             cost += torch.matmul(
                 ref_model.layers[int(2 * l)].weight, model.layers[int(2 * l)].weight.T
             )
@@ -342,34 +340,58 @@ def weight_matching(ref_model, model):
     return model
 
 
-for w in widths:
-    ref_model = FCNet_multiclass(784, w, depth, 10).to(device)
-    ref_model.load_state_dict(torch.load(f"models/mnist/model_w{w}_0.pth"))
-    ref_model.eval()
-
-    for i in range(1, num_models):
-        model = FCNet_multiclass(784, w, depth, 10).to(device)
-        model.load_state_dict(torch.load(f"models/mnist/model_w{w}_{i}.pth"))
-        model.eval()
-
-        model, _ = permute_align(
-            model, ref_model, test_loader, epochs=10, device=device
+# given ref model and model, return realigned model
+def weight_matching_1layer(ref_model, model):
+    width = ref_model.layers[0].weight.shape[0]
+    for _ in range(50):
+        # compute cost
+        cost = torch.zeros((width, width)).to(device)
+        cost += torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
+        cost += torch.matmul(
+            ref_model.layers[0].bias.unsqueeze(1),
+            model.layers[0].bias.unsqueeze(0),
+        )
+        cost += torch.matmul(
+            ref_model.layers[1].weight.T,
+            model.layers[1].weight,
         )
 
-        torch.save(model.state_dict(), f"models/mnist/perm_cust_model_w{w}_{i}.pth")
+        # get permutation using hungarian algorithm
+        row_ind, col_ind = linear_sum_assignment(
+            cost.cpu().detach().numpy(), maximize=True
+        )
+        perm = torch.zeros(cost.shape).to(device)
+        perm[row_ind, col_ind] = 1
+
+        # realign model
+        model.layers[0].weight = torch.nn.Parameter(
+            torch.matmul(perm, model.layers[0].weight)
+        )
+        model.layers[0].bias = torch.nn.Parameter(
+            torch.matmul(perm, model.layers[0].bias.unsqueeze(1)).squeeze()
+        )
+        model.layers[1].weight = torch.nn.Parameter(
+            torch.matmul(model.layers[1].weight, perm.T)
+        )
+
+    return model
+
+
+# for w in widths:
+#     ref_model = FCNet_multiclass(784, w, depth, 10).to(device)
+#     ref_model.load_state_dict(torch.load(f"models/mnist/model_w{w}_0.pth"))
+#     ref_model.eval()
+
+#     for i in range(1, num_models):
+#         model = FCNet_multiclass(784, w, depth, 10).to(device)
+#         model.load_state_dict(torch.load(f"models/mnist/model_w{w}_{i}.pth"))
+#         model.eval()
+
+#         model = weight_matching(ref_model, model)
+
+#         torch.save(model.state_dict(), f"models/mnist/perm_model_w{w}_{i}.pth")
 
 for width in widths:
-    models = []
-    ref_model = FCNet_multiclass(784, width, depth, 10).to(device)
-    ref_model.load_state_dict(torch.load(f"models/mnist/model_w{width}_0.pth"))
-    models.append(ref_model)
-    for i in range(1, num_models):
-        model = FCNet_multiclass(784, width, depth, 10).to(device)
-        model.load_state_dict(
-            torch.load(f"models/mnist/perm_cust_model_w{width}_{i}.pth")
-        )
-        models.append(model)
-
     for data in ["test"]:
         # choose loader
         if data == "train":
@@ -380,12 +402,6 @@ for width in widths:
         # data structure to store interpolation losses
         int_losses = np.zeros((num_models, num_models, 11))
 
-        # data structure to store loss barriers
-        barriers = np.zeros((num_models, num_models))
-
-        # data structure to store max barrier
-        max_barriers = np.zeros((num_models, num_models))
-
         # compute interpolation loss for each pair of models
         # log the results
         for i in range(num_models):
@@ -394,99 +410,106 @@ for width in widths:
                     continue
                 if i > j:
                     int_losses[i, j, :] = int_losses[j, i, :]
-                    barriers[i, j] = barriers[j, i]
-                    max_barriers[i, j] = max_barriers[j, i]
                     continue
                 if i < j:
-                    int_losses[i, j, :] = interpolation_losses(
-                        models[i], models[j], loader
-                    )
-                    barriers[i, j] = loss_barrier(int_losses[i, j, :])
-                    max_barriers[i, j] = max(int_losses[i, j, :])
+                    if i == 0:
+                        model_i = FCNet_multiclass(784, width, depth, 10).to(device)
+                        model_i.load_state_dict(
+                            torch.load(f"models/mnist/model_w{width}_{i}.pth")
+                        )
+                    else:
+                        model_i = FCNet_multiclass(784, width, depth, 10).to(device)
+                        model_i.load_state_dict(
+                            torch.load(f"models/mnist/perm_model_w{width}_{i}.pth")
+                        )
+                    if j == 0:
+                        model_j = FCNet_multiclass(784, width, depth, 10).to(device)
+                        model_j.load_state_dict(
+                            torch.load(f"models/mnist/model_w{width}_{j}.pth")
+                        )
+                    else:
+                        model_j = FCNet_multiclass(784, width, depth, 10).to(device)
+                        model_j.load_state_dict(
+                            torch.load(f"models/mnist/perm_model_w{width}_{j}.pth")
+                        )
+
+                    int_losses[i, j, :] = interpolation_losses(model_i, model_j, loader)
 
         np.save(
-            f"logs/mnist/perm_cust_int_losses_{data}_w{width}",
+            f"logs/mnist/perm_int_losses_{data}_w{width}",
             int_losses,
         )
-        np.save(
-            f"logs/mnist/perm_cust_barriers_{data}_w{width}",
-            barriers,
-        )
-        np.save(
-            f"logs/mnist/perm_cust_max_barriers_{data}_w{width}",
-            max_barriers,
-        )
 
 
-# visualize naive interpolation losses
-for data in ["test"]:
-    # create 3*2 subplots
-    fig, axes = plt.subplots(2, 2, figsize=(7, 8), sharex=True, sharey=True)
-
-    for i, width in enumerate(widths):
-        int_losses = np.load(f"logs/mnist/perm_cust_int_losses_{data}_w{width}.npy")
-
-        # compute mean values (average across dim 0 and 1)
-        int_losses_mean = int_losses.mean(axis=(0, 1))
-
-        # compute standard deviations (average across dim 0 and 1)
-        int_losses_std = int_losses.std(axis=(0, 1))
-
-        # plot individual losses as lines in same subplot
-        for j in range(int_losses.shape[0]):
-            for k in range(int_losses.shape[1]):
-                axes[i // 2, i % 2].plot(
-                    int_losses[j, k], linewidth=0.5, color="grey", alpha=0.1
-                )
-        # plot mean as line in same subplot
-        axes[i // 2, i % 2].plot(
-            int_losses_mean, color="red", linewidth=2, label="mean"
-        )
-        # show standard deviation as lines around mean
-        axes[i // 2, i % 2].plot(
-            int_losses_mean + int_losses_std,
-            color="red",
-            linewidth=1,
-            linestyle="--",
-        )
-        axes[i // 2, i % 2].plot(
-            int_losses_mean - int_losses_std,
-            color="red",
-            linewidth=1,
-            linestyle="--",
-        )
-        # set x axis label
-        axes[i // 2, i % 2].set_xlabel("$\\alpha$")
-        # set x axis ticks (0 to 1 in steps of 0.2)
-        axes[i // 2, i % 2].set_xticks(np.arange(0, 11, 2))
-        # set x axis tick labels (0 to 1 in steps of 0.1)
-        axes[i // 2, i % 2].set_xticklabels([f"{i / 10:.1f}" for i in range(0, 11, 2)])
-        # set x axis limits
-        axes[i // 2, i % 2].set_xlim(0, 10)
-        # set y axis label
-        axes[i // 2, i % 2].set_ylabel("loss")
-        # set y axis limits
-        axes[i // 2, i % 2].set_ylim(0, 6)
-        # set title
-        axes[i // 2, i % 2].set_title(f"width {width}")
-        # grid
-        axes[i // 2, i % 2].grid()
-
-    # set legend
-    axes[0, 0].legend(loc="upper right")
-
-    # set suptitle
-    fig.suptitle(f"Interpolation between permuted weights: {data} loss")
-    # tight layout
-    fig.tight_layout()
-    # save
-    plt.savefig(f"perm_cust_interpolation_losses_{data}.png", dpi=600)
-
-# # visualize perm interpolation losses
-# epsilon = np.zeros((int((40 * 39) / 2), 4))
+# # visualize naive interpolation losses
 # for data in ["test"]:
 #     for i, width in enumerate(widths):
-#         int_losses = np.load(f"logs/mnist/perm_int_losses_{data}_w{width}.npy")
+#         fig, axes = plt.subplots(1, 1, figsize=(5, 5))
+#         int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
+
+#         # compute mean values (average across dim 0 and 1)
+#         int_losses_mean = int_losses.mean(axis=(0, 1))
+
+#         # compute standard deviations (average across dim 0 and 1)
+#         int_losses_std = int_losses.std(axis=(0, 1))
+
+#         # plot individual losses as lines in same subplot
+#         for j in range(int_losses.shape[0]):
+#             for k in range(int_losses.shape[1]):
+#                 # plot individual losses as lines in same subplot
+#                 axes.plot(int_losses[j, k], linewidth=0.5, color="grey", alpha=0.1)
+#         # plot mean as line in same subplot
+#         axes.plot(int_losses_mean, color="red", linewidth=2, label="mean")
+#         # show standard deviation as lines around mean
+#         axes.plot(
+#             int_losses_mean + int_losses_std,
+#             color="red",
+#             linewidth=1,
+#             linestyle="--",
+#         )
+#         axes.plot(
+#             int_losses_mean - int_losses_std,
+#             color="red",
+#             linewidth=1,
+#             linestyle="--",
+#         )
+#         # set x axis label
+#         axes.set_xlabel("$\\alpha$")
+#         # set x axis limits
+#         axes.set_xlim(0, 10)
+#         # set y axis label
+#         axes.set_ylabel("loss")
+#         # # set y axis limits
+#         # if i == 0:
+#         #     axes.set_ylim(0, 2.0)
+#         # elif i == 1 or i == 2:
+#         #     axes.set_ylim(0, 2.0)
+#         # elif i == 3:
+#         #     axes.set_ylim(0, 2.0)
+#         # elif i == 4:
+#         #     axes.set_ylim(0, 1.2)
+#         # elif i == 5:
+#         #     axes.set_ylim(0, 1.0)
+#         # elif i == 6:
+#         #     axes.set_ylim(0, 0.6)
+#         # else:
+#         #     axes.set_ylim(0, 0.4)
+#         # set title
+#         axes.set_title(f"width {width}")
+#         # grid
+#         axes.grid()
+#         # set legend
+#         axes.legend()
+#         # set tight layout
+#         fig.tight_layout()
+#         # save
+#         plt.savefig(f"perm_interpolation_losses_{data}_w{width}.png", dpi=600)
+
+# # visualize epsilon
+# epsilon = np.zeros((int((50 * 49) / 2), len(widths)))
+# for data in ["test"]:
+#     for i, width in enumerate(widths):
+#         int_losses = np.load(f"logs/moons/perm_int_losses_{data}_w{width}.npy")
 #         idx = 0
 #         for j in range(int_losses.shape[0]):
 #             for k in range(int_losses.shape[1]):
@@ -502,16 +525,124 @@ for data in ["test"]:
 #                 else:
 #                     continue
 
-# # visualize
-# fig, ax = plt.subplots(1, 1, figsize=(7, 4))
+# # visualize epsilon
+# epsilon_naive = np.zeros((int((50 * 49) / 2), len(widths)))
+# for data in ["test"]:
+#     for i, width in enumerate(widths):
+#         int_losses = np.load(f"logs/moons/naive_int_losses_{data}_w{width}.npy")
+#         idx = 0
+#         for j in range(int_losses.shape[0]):
+#             for k in range(int_losses.shape[1]):
+#                 if j == k:
+#                     continue
+#                 if j > k:
+#                     continue
+#                 if j < k:
+#                     epsilon_naive[idx, i] = int_losses[j, k, :].max() - max(
+#                         int_losses[j, k, 0], int_losses[j, k, -1]
+#                     )
+#                     idx += 1
+#                 else:
+#                     continue
+
+# # seaborn violin plot
+# import seaborn as sns
+
+# # grid
+# sns.set_style("whitegrid")
+
+# # prepare x and y vectors
+# # y axis is 1D vector of epsilon values
+# epsilon = epsilon.T.flatten()
+
+# # x axis is 1D vector of widths
+# widths = np.repeat(widths, int((50 * 49) / 2))
+# # log scale
+# widths = np.log2(widths)
+# # violin plot
+# sns.violinplot(
+#     x=widths,
+#     y=epsilon,
+#     cut=0,
+#     inner="box",
+#     scale="width",
+#     color="C1",
+# )
+# # set x axis label
+# plt.xlabel("width")
+# # set x axis ticks and labels 2^0, 2^1, 2^2, ...
+# plt.xticks(np.arange(0, 9, 1), labels=[f"$2^{{{i+1}}}$" for i in range(0, 9)])
+# # set y axis label
+# plt.ylabel("$\\epsilon$")
+# # # set y axis limits
+# # plt.ylim(0, 1.0)
+# # set tight layout
+# plt.tight_layout()
+# # save
+# plt.savefig(f"perm_epsilon.png", dpi=600)
+
+# # medians
+# epsilon_medians = np.median(epsilon, axis=0)
+# epsilon_naive_medians = np.median(epsilon_naive, axis=0)
+
+# # plot as sns lineplot
+# fig, ax = plt.subplots(1, 1, figsize=(8, 4))
 # # x axis in log scale
 # ax.set_xscale("log")
+# # # y axis in log scale
+# # ax.set_yscale("log")
+# # plot medians
+# ax.plot(
+#     widths,
+#     epsilon_medians,
+#     color="C1",
+#     marker="o",
+#     markersize=5,
+#     label="permuted",
+#     linestyle="dashed",
+# )
+# ax.plot(
+#     widths,
+#     epsilon_naive_medians,
+#     color="C0",
+#     marker="o",
+#     markersize=5,
+#     label="naive",
+# )
+# # set x axis label
+# ax.set_xlabel("width")
+# # set x axis ticks
+# ax.set_xticks(widths)
+# # set x axis tick labels
+# ax.set_xticklabels(widths)
+# # set x axis limits
+# ax.set_xlim(1, 580)
+# # # set y axis limi
+# # ax.set_ylim(0, 1.0)
+# # set y axis label
+# ax.set_ylabel("median $\\epsilon$")
+# # grid
+# ax.grid()
+# # set legend
+# ax.legend(loc="upper right")
+# # set tight layout
+# fig.tight_layout()
+# # save
+# plt.savefig(f"epsilon.png", dpi=600)
+
+
+# # visualize
+# fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+# # x axis in log scale
+# ax.set_xscale("log")
+# # # y axis in log scale
+# # ax.set_yscale("log")
 # # plot epsilon as violin plot
 # ax.violinplot(
 #     epsilon,
 #     widths,
 #     showmeans=True,
-#     showextrema=False,
+#     showextrema=True,
 #     widths=np.array(widths) / 5,
 #     showmedians=True,
 # )
@@ -529,12 +660,12 @@ for data in ["test"]:
 # ax.plot(
 #     widths,
 #     np.median(epsilon, axis=0),
-#     color="blue",
+#     color="green",
 #     marker="o",
 #     markersize=2,
 #     label="median",
-#     linestyle="dotted",
-# )
+#     linestyle="dashed",
+# # )
 # # set x axis label
 # ax.set_xlabel("width")
 # # set x axis ticks
@@ -542,21 +673,19 @@ for data in ["test"]:
 # # set x axis tick labels
 # ax.set_xticklabels(widths)
 # # set x axis limits
-# ax.set_xlim(6, 580)
+# ax.set_xlim(1, 580)
 # # set y axis limits
-# ax.set_ylim(0, 8)
+# ax.set_ylim(0, 1.0)
 # # set y axis label
 # ax.set_ylabel("$\\epsilon$")
 # # grid
 # ax.grid()
 # # set legend
 # ax.legend(loc="upper right")
-# # set suptitle
-# fig.suptitle("$\\epsilon$-linear mode connectivity")
-# # tight layout
-# # fig.tight_layout()
+# # set tight layout
+# fig.tight_layout()
 # # save
-# plt.savefig(f"perm_epsilon.png", dpi=600)
+# plt.savefig(f"naive_epsilon.png", dpi=600)
 
 # # visualize naive interpolation losses zoomed in
 # for data in ["test"]:
