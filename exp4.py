@@ -1,8 +1,8 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from architecture.MLP import FCNet
-from utils import get_data, plotter, evaluate
+from architecture.MLP import MLP, FCNet_multiclass
+from utils import get_data, plotter, evaluate, evaluate_multiclass
 from collections import OrderedDict
 from matplotlib import cm, colorbar
 from matplotlib.colors import Normalize, BoundaryNorm, LogNorm
@@ -18,7 +18,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-width = 512
+# width = 512
 
 # # load data from data/moons.npz
 # file = np.load("data/moons.npz")
@@ -43,34 +43,34 @@ width = 512
 #     shuffle=False,
 # )
 
-# choose two random indices from 0 to 49
-idx1 = np.random.randint(0, 50)
-idx2 = np.random.randint(0, 50)
-while idx1 == idx2:
-    idx2 = np.random.randint(0, 50)
+# # choose two random indices from 0 to 49
+# idx1 = np.random.randint(0, 50)
+# idx2 = np.random.randint(0, 50)
+# while idx1 == idx2:
+#     idx2 = np.random.randint(0, 50)
 
-# replace
-idx1 = 33
-idx2 = 39
+# # replace
+# idx1 = 33
+# idx2 = 39
 
-# load both models
-model1 = FCNet(2, width, 1, 1)
-model2 = FCNet(2, width, 1, 1)
+# # load both models
+# model1 = FCNet(2, width, 1, 1)
+# model2 = FCNet(2, width, 1, 1)
 
-model1.load_state_dict(torch.load(f"models/moons/model_w{width}_{idx1}.pth"))
-model2.load_state_dict(torch.load(f"models/moons/model_w{width}_{idx2}.pth"))
+# model1.load_state_dict(torch.load(f"models/moons/model_w{width}_{idx1}.pth"))
+# model2.load_state_dict(torch.load(f"models/moons/model_w{width}_{idx2}.pth"))
 
-average_model = FCNet(2, width, 1, 1)
-average_state_dict = OrderedDict()
-for key in model1.state_dict():
-    average_state_dict[key] = (model1.state_dict()[key] + model2.state_dict()[key]) / 2
-average_model.load_state_dict(average_state_dict)
+# average_model = FCNet(2, width, 1, 1)
+# average_state_dict = OrderedDict()
+# for key in model1.state_dict():
+#     average_state_dict[key] = (model1.state_dict()[key] + model2.state_dict()[key]) / 2
+# average_model.load_state_dict(average_state_dict)
 
 # config
-widths = [8, 32, 128, 512]
-num_models = 40
+widths = [8, 16, 64, 512]
+num_models = 50
 depth = 3
-epochs = 50
+epochs = 60
 
 train_loader = torch.utils.data.DataLoader(
     datasets.MNIST(
@@ -437,47 +437,47 @@ def get_low_norm_nodes(model):
     return low_norm_indices, low_norm_fraction
 
 
-# visualize perm interpolation losses
-widths = [32]
+# # visualize perm interpolation losses
+# widths = [32]
 
-epsilon = np.zeros((40, 40, len(widths)))
-for data in ["test"]:
-    for i, width in enumerate(widths):
-        int_losses = np.load(f"logs/mnist/perm_cust_int_losses_{data}_w{width}.npy")
-        for j in range(int_losses.shape[0]):
-            for k in range(int_losses.shape[1]):
-                if j == k:
-                    continue
-                if j > k:
-                    epsilon[j, k, i] = epsilon[k, j, i]
-                if j < k:
-                    epsilon[j, k, i] = int_losses[j, k, :].max() - max(
-                        int_losses[j, k, 0], int_losses[j, k, -1]
-                    )
+# epsilon = np.zeros((40, 40, len(widths)))
+# for data in ["test"]:
+#     for i, width in enumerate(widths):
+#         int_losses = np.load(f"logs/mnist/perm_cust_int_losses_{data}_w{width}.npy")
+#         for j in range(int_losses.shape[0]):
+#             for k in range(int_losses.shape[1]):
+#                 if j == k:
+#                     continue
+#                 if j > k:
+#                     epsilon[j, k, i] = epsilon[k, j, i]
+#                 if j < k:
+#                     epsilon[j, k, i] = int_losses[j, k, :].max() - max(
+#                         int_losses[j, k, 0], int_losses[j, k, -1]
+#                     )
 
-        g = sns.clustermap(
-            epsilon[:, :, i],
-            cmap="rocket",
-            vmin=0,
-            vmax=1.0,
-            xticklabels=False,
-            yticklabels=False,
-            figsize=(8, 8),
-            cbar_kws={"label": "$\epsilon$"},
-            metric="euclidean",
-            method="single",
-        )
-        # save the figure
-        g.ax_row_dendrogram.set_visible(False)
-        g.ax_col_dendrogram.set_visible(False)
-        # hide the colorbar
-        g.cax.set_visible(False)
-        # save the figure
-        g.savefig(f"zoomed_perm_sim_w{width}.png", dpi=600, bbox_inches="tight")
+#         g = sns.clustermap(
+#             epsilon[:, :, i],
+#             cmap="rocket",
+#             vmin=0,
+#             vmax=1.0,
+#             xticklabels=False,
+#             yticklabels=False,
+#             figsize=(8, 8),
+#             cbar_kws={"label": "$\epsilon$"},
+#             metric="euclidean",
+#             method="single",
+#         )
+#         # save the figure
+#         g.ax_row_dendrogram.set_visible(False)
+#         g.ax_col_dendrogram.set_visible(False)
+#         # hide the colorbar
+#         g.cax.set_visible(False)
+#         # save the figure
+#         g.savefig(f"zoomed_perm_sim_w{width}.png", dpi=600, bbox_inches="tight")
 
 # # plot the cosine similarity between incoming weights of node-node pairs
 # # plot the weights
-# for i, model in enumerate([model1, model2]):
+# for i, model in enumerate([model1]):
 #     model.eval().to(device)
 #     w_in = model.layers[0].weight.detach().cpu().numpy()
 #     b_in = model.layers[0].bias.detach().cpu().numpy()
@@ -522,41 +522,44 @@ for data in ["test"]:
 #                 "yaxis_gridcolor": "grey",
 #                 "xaxis_gridcolor": "grey",
 #                 # title
-#                 "title": f"Clustering features",
+#                 "title": f"Number of persistent feature clusters",
+#                 # x limits
+#                 "xaxis": {"range": [0.001, 0.06]},
 #             }
 #         },
 #     )
 #     # save the plotly figure
-#     fig.write_image(f"moons_w512_betti_1.png", width=800, height=800)
+#     fig.write_image(f"moons_w512_betti.png", width=800, height=800)
 
-#     # Plot persistence diagrams
-#     fig1 = VR.plot(
-#         diagrams, plotly_params={"layout": {"title": f"Persistence diagram"}}
+#     # plot the sim matrix
+#     g = sns.clustermap(
+#         sim,
+#         cmap="icefire",
+#         vmin=-1.0,
+#         vmax=1.0,
+#         xticklabels=False,
+#         yticklabels=False,
+#         figsize=(16, 16),
+#         cbar_kws={"label": "cosine similarity"},
+#         metric="euclidean",
+#         method="single",
 #     )
+#     # save the figure
+#     g.ax_row_dendrogram.set_visible(False)
+#     g.ax_col_dendrogram.set_visible(False)
+#     # hide the colorbar
+#     g.cax.set_visible(False)
+#     # save the figure
+#     g.savefig(f"moons_w{width}_sim.png", dpi=600, bbox_inches="tight")
 
-#     # save the plotly figure
-#     fig1.write_image(f"moons_w512_persistence_1.png", width=800, height=800)
-
-# # plot the sim matrix
-# g = sns.clustermap(
-#     sim,
-#     cmap="icefire",
-#     vmin=-1.0,
-#     vmax=1.0,
-#     xticklabels=False,
-#     yticklabels=False,
-#     figsize=(16, 16),
-#     cbar_kws={"label": "cosine similarity"},
-#     metric="euclidean",
-#     method="single",
+# # save the colorbar of icefire cmap
+# fig, ax = plt.subplots(1, 1, figsize=(0.5, 4))
+# norm = Normalize(vmin=0, vmax=0.1)
+# cb1 = colorbar.ColorbarBase(
+#     ax, cmap="rocket", norm=norm, orientation="vertical", label="$\epsilon$"
 # )
-# # save the figure
-# g.ax_row_dendrogram.set_visible(True)
-# g.ax_col_dendrogram.set_visible(True)
-# # hide the colorbar
-# g.cax.set_visible(False)
-# # save the figure
-# g.savefig(f"moons_w{width}_sim_{i}.png", dpi=600, bbox_inches="tight")
+# fig.savefig("rocket_cbar_moons_hyp.png", dpi=600, bbox_inches="tight")
+
 
 # plot the epsilon matrix
 
@@ -598,28 +601,75 @@ for data in ["test"]:
 #     # save the plotly figure
 #     fig1.write_image(f"perm_sim_persistence_w{width}.png", width=800, height=800)
 
-# g = sns.clustermap(
-#     epsilon[:, :, i],
-#     cmap="rocket",
-#     vmin=0,
-#     vmax=1.0,
-#     xticklabels=False,
-#     yticklabels=False,
-#     figsize=(8, 8),
-#     cbar_kws={"label": "$\epsilon$"},
-#     metric="euclidean",
-#     method="single",
-# )
-# # save the figure
-# g.ax_row_dendrogram.set_visible(False)
-# g.ax_col_dendrogram.set_visible(False)
-# # hide the colorbar
-# g.cax.set_visible(False)
-# # save the figure
-# g.savefig(f"naive_sim_w{width}.png", dpi=600, bbox_inches="tight")
+widths = [8, 16, 64, 512]
+
+import seaborn as sns
+
+# whitegrid
+sns.set_theme(style="whitegrid")
+
+# # visualize epsilon
+# perm_epsilon_moons = np.zeros((11, 11, len(widths)))
+# for data in ["test"]:
+#     for i, width in enumerate(widths):
+#         int_losses = np.load(f"logs/moons/naive_int_losses_{data}_swa_w{width}.npy")
+#         for j in range(int_losses.shape[0]):
+#             for k in range(int_losses.shape[1]):
+#                 if j == k:
+#                     continue
+#                 if j > k:
+#                     perm_epsilon_moons[j, k, i] = perm_epsilon_moons[k, j, i]
+#                 if j < k:
+#                     perm_epsilon_moons[j, k, i] = int_losses[j, k, :].max() - max(
+#                         int_losses[j, k, 0], int_losses[j, k, -1]
+#                     )
+#                 else:
+#                     continue
+
+# visualize epsilon
+perm_epsilon_mnist = np.zeros((11, 11, len(widths)))
+for data in ["test"]:
+    for i, width in enumerate(widths):
+        int_losses = np.load(f"logs/mnist/naive_int_losses_{data}_swa_w{width}.npy")
+        for j in range(int_losses.shape[0]):
+            for k in range(int_losses.shape[1]):
+                if j == k:
+                    continue
+                if j > k:
+                    perm_epsilon_mnist[j, k, i] = perm_epsilon_mnist[k, j, i]
+                if j < k:
+                    perm_epsilon_mnist[j, k, i] = int_losses[j, k, :].max() - max(
+                        int_losses[j, k, 0], int_losses[j, k, -1]
+                    )
+                else:
+                    continue
+
+for i, width in enumerate(widths):
+    g = sns.clustermap(
+        perm_epsilon_mnist[:, :, i],
+        cmap="rocket",
+        vmin=0,
+        # vmax=0.1,
+        # only show x tick label of 0
+        xticklabels=[0] + [""] * 49,
+        yticklabels=[0] + [""] * 49,
+        row_cluster=False,
+        col_cluster=False,
+        figsize=(8, 8),
+        cbar_kws={"label": "$\epsilon$"},
+        metric="euclidean",
+        method="single",
+    )
+    # save the figure
+    g.ax_row_dendrogram.set_visible(False)
+    g.ax_col_dendrogram.set_visible(False)
+    # hide the colorbar
+    g.cax.set_visible(True)
+    # save the figure
+    g.savefig(f"swa_sim_mnist_w{width}.png", dpi=600, bbox_inches="tight")
 
 
-def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99):
+def reduce_model(model, in_threshold=0.0, out_threshold=0.0, sim_threshold=0.99):
     # get the weights
     w_in = model.layers[0].weight.detach().cpu().numpy()
     b_in = model.layers[0].bias.detach().cpu().numpy()
@@ -664,7 +714,7 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
         v2 = w_out[:, list(j_indices)]
         n1 = w_in_vec[i, :]
         n2 = w_in_vec[list(j_indices), :]
-        lamb = np.linalg.norm(v1) / np.linalg.norm(v2, axis=0)
+        lamb = np.linalg.norm(n1) / np.linalg.norm(n2, axis=1)
         w_out[:, i] = v1 + np.sum(lamb.reshape(1, -1) * v2, axis=1)
         w_out = np.delete(w_out, list(j_indices), axis=1)
         # update w_in_vec
@@ -705,7 +755,7 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
     num_nodes = w_in.shape[0]
 
     # create new model
-    reduced_model = FCNet(input_size=2, width=num_nodes, depth=1, output_size=1).to(
+    reduced_model = MLP(input_size=2, width=num_nodes, depth=1, output_size=1).to(
         device
     )
 
@@ -718,22 +768,27 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
     return reduced_model, num_nodes
 
 
-# model1.eval().to(device)
-# model2.eval().to(device)
+# reduce all models
+# widths = [2, 4, 8, 16, 32, 64, 128, 256, 512]
+# for width in widths:
+#     reduced_logs = np.zeros((50, 3))
+#     for idx in range(50):
+#         model = FCNet(2, width, 1, 1).to(device)
+#         model.load_state_dict(torch.load(f"models/moons/model_w{width}_{idx}.pth"))
+#         reduced_model, num_nodes = reduce_model(model)
+#         reduced_model.eval().to(device)
+#         loss, acc = evaluate(reduced_model, test_loader)
+#         reduced_logs[idx, 0] = loss
+#         reduced_logs[idx, 1] = acc
+#         reduced_logs[idx, 2] = num_nodes
+#         # save the reduced model
+#         torch.save(
+#             reduced_model.state_dict(),
+#             f"models/moons/reduced_model_w{width}_{idx}.pth",
+#         )
 
-# # reduce the model
-# reduced_model1, num_nodes1 = reduce_model(
-#     model1, in_threshold=0.5, out_threshold=0.5, sim_threshold=0.95
-# )
-# reduced_model2, num_nodes2 = reduce_model(
-#     model2, in_threshold=0.5, out_threshold=0.5, sim_threshold=0.95
-# )
+#     np.save(f"logs/moons/reduced_logs_w{width}.npy", reduced_logs)
 
-# # performance of reduced models
-# l, a = evaluate(reduced_model1, test_loader)
-# print(f"Reduced model 1: loss = {l:.4f}, accuracy = {a:.4f}")
-# l, a = evaluate(reduced_model2, test_loader)
-# print(f"Reduced model 2: loss = {l:.4f}, accuracy = {a:.4f}")
 
 # # make average model of width = max(num_nodes1, num_nodes2)
 # width = max(num_nodes1, num_nodes2)
@@ -838,21 +893,21 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 # # SWA
 # from torch.optim.swa_utils import AveragedModel, SWALR
 
-# # Lets keep model 0 as ref
-# widths = [4, 8, 16, 32, 128, 512]
-# model_losses = np.zeros((len(widths), 21))
-# swa_model_losses = np.zeros((len(widths), 21))
+# # # Lets keep model 0 as ref
+# widths = [8, 16, 64, 512]
+# model_losses = np.zeros((len(widths), 11))
+# swa_model_losses = np.zeros((len(widths), 11))
 
 # for i, width in enumerate(widths):
-#     model = FCNet(2, width, 1, 1).to(device)
-#     model.load_state_dict(torch.load(f"models/moons/model_w{width}_0.pth"))
+#     model = FCNet_multiclass(784, width, depth, 10).to(device)
+#     model.load_state_dict(torch.load(f"models/mnist/model_w{width}_0.pth"))
 
 #     # model
-#     loss, _ = evaluate(model, test_loader)
+#     loss, _ = evaluate_multiclass(model, test_loader)
 #     model_losses[i, 0] = loss
 
-#     criterion = torch.nn.BCEWithLogitsLoss()
-#     optimizer = torch.optim.AdamW(model.parameters(), lr=0.05)
+#     criterion = torch.nn.CrossEntropyLoss()
+#     optimizer = torch.optim.RMSprop(model.parameters(), lr=0.05)
 #     swa_model = AveragedModel(model).to(device).train()
 #     swa_scheduler = SWALR(optimizer, swa_lr=0.05)
 
@@ -863,14 +918,12 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 
 #     # SWA
 #     swa_model.eval()
-#     loss, _ = evaluate(swa_model, test_loader)
+#     loss, _ = evaluate_multiclass(swa_model, test_loader)
 #     swa_model_losses[i, 0] = loss
 #     swa_model.train()
 
-#     for epoch in range(20):
+#     for epoch in range(10):
 #         for x, y in train_loader:
-#             # model has 1 output
-#             y = y.unsqueeze(1)
 #             # Forward pass
 #             optimizer.zero_grad()
 #             y_pred = model(x.to(device))
@@ -879,62 +932,96 @@ def reduce_model(model, in_threshold=0.1, out_threshold=0.1, sim_threshold=0.99)
 #             loss.backward()
 #             optimizer.step()
 #         # save the model every epoch
-#         torch.save(model.state_dict(), f"models/moons/swain_w{width}_{epoch}.pth")
+#         torch.save(model.state_dict(), f"models/mnist/swain_rms_w{width}_{epoch}.pth")
 #         # evaluate the model
-#         loss, _ = evaluate(model, test_loader)
+#         loss, _ = evaluate_multiclass(model, test_loader)
 #         model_losses[i, epoch + 1] = loss
 #         # update the swa model
 #         if epoch >= swa_start:
 #             swa_model.update_parameters(model)
 #             swa_scheduler.step()
 #         # save the model every epoch
-#         torch.save(swa_model.state_dict(), f"models/moons/swa_w{width}_{epoch}.pth")
+#         torch.save(swa_model.state_dict(), f"models/mnist/swa_rms_w{width}_{epoch}.pth")
 #         # evaluate the swa model
 #         swa_model.eval()
-#         loss, _ = evaluate(swa_model, test_loader)
+#         loss, _ = evaluate_multiclass(swa_model, test_loader)
 #         swa_model_losses[i, epoch + 1] = loss
 #         swa_model.train()
 
 # # save the losses
-# np.save("logs/moons/swain_model_losses.npy", model_losses)
-# np.save("logs/moons/swa_model_losses.npy", swa_model_losses)
+# np.save("logs/mnist/swain_rms_model_losses.npy", model_losses)
+# np.save("logs/mnist/swa_rms_model_losses.npy", swa_model_losses)
+
+# import seaborn as sns
+
+# # WHITEGRID
+# sns.set_theme(style="whitegrid")
 
 # # plot the losses
-# model_losses = np.load("logs/moons/swain_model_losses.npy")
-# swa_model_losses = np.load("logs/moons/swa_model_losses.npy")
+# model_losses = np.load("logs/mnist/swain_rms_model_losses.npy")
+# swa_model_losses = np.load("logs/mnist/swa_rms_model_losses.npy")
 
-# fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True, sharex=True)
-# # y in log scale
-# axes[0].set_yscale("log")
-# axes[1].set_yscale("log")
+# fig, axes = plt.subplots(2, 2, figsize=(8, 8))
+
 # for i, width in enumerate(widths):
-#     axes[i % 2].plot(
-#         model_losses[i],
-#         linestyle="--",
-#         marker="o",
-#         color=f"C{i}",
-#         markersize=4,
-#         alpha=0.5,
-#     )
-#     axes[i % 2].plot(
-#         swa_model_losses[i],
-#         label=f"width {width}",
-#         marker="o",
-#         color=f"C{i}",
-#         markersize=4,
-#         alpha=0.5,
-#     )
-#     axes[i % 2].set_xlabel("Epochs")
-#     axes[i % 2].set_ylabel("Test loss")
-# # common legend
-# # get legent from 0 and 1 axes
-# handles, labels = axes[0].get_legend_handles_labels()
-# # append the legend from the second axes
-# handles += axes[1].get_legend_handles_labels()[0]
-# labels += axes[1].get_legend_handles_labels()[1]
-# # add the legend
-# axes[1].legend(handles, labels, loc="upper right")
-# # title
-# axes[0].set_title("SWA vs. model loss")
-# # save the figure
-# fig.savefig("swa_losses.png", dpi=600, bbox_inches="tight")
+#     if i == 0:
+#         axes[0, 0].plot(model_losses[0], color=f"C{i}", markersize=2, marker="o")
+#         axes[0, 0].plot(
+#             swa_model_losses[0], color=f"C{i}", ls="--", markersize=2, marker="o"
+#         )
+#     elif i == 1:
+#         axes[0, 1].plot(
+#             model_losses[1], color=f"C{i}", markersize=2, label="samples", marker="o"
+#         )
+#         axes[0, 1].plot(
+#             swa_model_losses[1],
+#             ls="--",
+#             color=f"C{i}",
+#             markersize=2,
+#             label="averaged model",
+#             marker="o",
+#         )
+#     elif i == 2:
+#         axes[1, 0].plot(model_losses[2], color=f"C{i}", markersize=2, marker="o")
+#         axes[1, 0].plot(
+#             swa_model_losses[2], ls="--", color=f"C{i}", markersize=2, marker="o"
+#         )
+#     elif i == 3:
+#         axes[1, 1].plot(model_losses[3], color=f"C{i}", markersize=2, marker="o")
+#         axes[1, 1].plot(
+#             swa_model_losses[3], ls="--", color=f"C{i}", markersize=2, marker="o"
+#         )
+
+# axes[0, 0].set_ylabel("Test loss")
+# axes[1, 0].set_ylabel("Test loss")
+# axes[1, 0].set_xlabel("epoch")
+# axes[1, 1].set_xlabel("epoch")
+# # # grid
+# # axes[0, 0].grid(True)
+# # axes[0, 1].grid(True)
+# # axes[1, 0].grid(True)
+# # axes[1, 1].grid(True)
+# # subtitles
+# axes[0, 0].set_title("Hidden layer width 8")
+# axes[0, 1].set_title("Hidden layer width 16")
+# axes[1, 0].set_title("Hidden layer width 64")
+# axes[1, 1].set_title("Hidden layer width 512")
+# # change xticks labels to [60, 61, .., 70]
+# axes[0, 0].set_xticklabels([58, 60, 62, 64, 66, 68, 70])
+# axes[0, 1].set_xticklabels([58, 60, 62, 64, 66, 68, 70])
+# axes[1, 0].set_xticklabels([58, 60, 62, 64, 66, 68, 70])
+# axes[1, 1].set_xticklabels([58, 60, 62, 64, 66, 68, 70])
+
+# # legend
+# axes[0, 1].legend(loc="upper right")
+# # # legend at the bottom of the figure
+# # fig.legend(
+# #     loc="lower center",
+# #     ncol=2,
+# #     bbox_to_anchor=(0.5, -0.01),
+# #     bbox_transform=fig.transFigure,
+# # )
+# # pad the axes
+# fig.tight_layout(pad=2.0)
+
+# fig.savefig(f"mnist_swain_rms_losses.png", dpi=600)

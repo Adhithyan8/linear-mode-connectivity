@@ -1,110 +1,72 @@
 import torch
 import torch.nn as nn
 
-# Define the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # Define the model
-class FCNet(nn.Module):
+class MLP(nn.Module):
     def __init__(
-        self, input_size: int, width: int, depth: int, output_size: int
-    ) -> None:
+        self,
+        input_size=2,
+        width=64,
+        depth=1,
+        output_size=1,
+        layer_norm=False,
+    ):
         super().__init__()
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_size, width))
+        if layer_norm:
+            self.layers.append(nn.LayerNorm(width))
         for _ in range(depth - 1):
             self.layers.append(nn.Linear(width, width))
+            if layer_norm:
+                self.layers.append(nn.LayerNorm(width))
         self.layers.append(nn.Linear(width, output_size))
 
-    # use ReLU activation for all layers except the last one
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        for layer in self.layers[:-1]:  # type: ignore # holds submodules in a list
-            x = torch.relu(layer(x))
-        x = self.layers[-1](x)
-        return x
-
-
-class FCNet_multiclass(nn.Module):
-    def __init__(
-        self, input_size: int, width: int, depth: int, output_size: int
-    ) -> None:
-        super().__init__()
-        self.layers = nn.ModuleList()
-        self.layers.append(nn.Linear(input_size, width))
-        self.layers.append(nn.LayerNorm(width))  # add layer normalization
-        for _ in range(depth - 1):
-            self.layers.append(nn.Linear(width, width))
-            self.layers.append(nn.LayerNorm(width))  # add layer normalization
-        self.layers.append(nn.Linear(width, output_size))
-
-    # use ReLU activation for all layers except the last one
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # flatten the input
+    # use ReLU for all except the last
+    def forward(self, x):  # flatten
         x = x.view(x.shape[0], -1)
-        for i, layer in enumerate(self.layers[:-1]):  # type: ignore # holds submodules in a list
-            if i % 2 == 1:
-                x = torch.relu(layer(x))
-            else:
+        for layer in self.layers[:-1]:
+            if isinstance(layer, nn.LayerNorm):
                 x = layer(x)
+            else:
+                x = torch.relu(layer(x))
         x = self.layers[-1](x)
         return x
 
 
 # Define the training loop
-def train(model, train_loader, epochs=100, lr=0.001, model_name="model"):
-    # Define the loss function
-    criterion = nn.BCEWithLogitsLoss()
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-
-    # Train the model
+def train(
+    model,
+    loader,
+    criterion,
+    optimizer,
+    lr_scheduler=None,
+    scheduler="batchwise",
+    epochs=100,
+    model_name="model",
+):
     model.to(device)
     model.train()
+
     loss = 0.0
-    for epoch in range(epochs):
-        for x, y in train_loader:
-            # model has 1 output
-            y = y.unsqueeze(1)
-            # Forward pass
-            optimizer.zero_grad()
-            y_pred = model(x.to(device))
-            loss = criterion(y_pred, y.to(device))
-
-            # Backward pass
-            loss.backward()
-            optimizer.step()
-        lr_scheduler.step()
-
-    # save the model
-    torch.save(model.state_dict(), f"models/{model_name}.pth")
-
-
-def train_multiclass(model, train_loader, epochs=100, lr=0.001, model_name="model"):
-    # Define the loss function
-    criterion = nn.CrossEntropyLoss()
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-    lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=0.1, steps_per_epoch=len(train_loader), epochs=epochs
-    )
-
-    # Train the model
-    model.to(device)
-    model.train()
-    loss = 0.0
-    for epoch in range(epochs):
-        for x, y in train_loader:
+    for _ in range(epochs):
+        for x, y in loader:
+            if isinstance(criterion, nn.BCEWithLogitsLoss):
+                y = y.unsqueeze(1)
             # forward pass
             optimizer.zero_grad()
             y_pred = model(x.to(device))
             loss = criterion(y_pred, y.to(device))
-
             # backward pass
             loss.backward()
             optimizer.step()
+            if scheduler == "batchwise":
+                lr_scheduler.step()
+        if scheduler == "epochwise":
             lr_scheduler.step()
 
-    # save the model
+    # save the model weights
     torch.save(model.state_dict(), f"models/{model_name}.pth")
