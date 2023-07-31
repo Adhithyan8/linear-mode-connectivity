@@ -3,6 +3,8 @@ from collections import OrderedDict
 
 import numpy as np
 import torch
+import torch.nn as nn
+from scipy.optimize import linear_sum_assignment
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -69,3 +71,40 @@ def interpolation_losses(model1, model2, loader, output_size, num_points=11):
         losses[idx] = loss
 
     return losses
+
+
+# given ref model and model, return realigned model
+def weight_matching(ref_model, model):
+    width = ref_model.layers[0].weight.shape[0]
+    for _ in range(50):
+        # compute cost
+        cost = torch.zeros((width, width)).to(device)
+        cost += torch.matmul(ref_model.layers[0].weight, model.layers[0].weight.T)
+        cost += torch.matmul(
+            ref_model.layers[0].bias.unsqueeze(1),
+            model.layers[0].bias.unsqueeze(0),
+        )
+        cost += torch.matmul(
+            ref_model.layers[1].weight.T,
+            model.layers[1].weight,
+        )
+
+        # get permutation using hungarian algorithm
+        row_ind, col_ind = linear_sum_assignment(
+            cost.cpu().detach().numpy(), maximize=True
+        )
+        perm = torch.zeros(cost.shape).to(device)
+        perm[row_ind, col_ind] = 1
+
+        # realign model
+        model.layers[0].weight = nn.Parameter(
+            torch.matmul(perm, model.layers[0].weight)
+        )
+        model.layers[0].bias = nn.Parameter(
+            torch.matmul(perm, model.layers[0].bias.unsqueeze(1)).squeeze()
+        )
+        model.layers[1].weight = nn.Parameter(
+            torch.matmul(model.layers[1].weight, perm.T)
+        )
+
+    return model
