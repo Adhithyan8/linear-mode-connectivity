@@ -134,7 +134,7 @@ for init in inits:
                 torch.load(f"models/moons/model_{init}_{optim}_{i}.pth")
             )
             # realign the model
-            model = weight_matching(ref_model, model)
+            model = weight_matching(ref_model, model, depth=1, layer_norm=False)
             # save the model
             torch.save(
                 model.state_dict(),
