@@ -47,7 +47,7 @@ def evaluate(model, loader, criteria, output_size=1):
 
 
 # given 2 models and loaders, return a np array of interpolation losses
-def interpolation_losses(model1, model2, loader, output_size, num_points=11):
+def interpolation_losses(model1, model2, loader, criteria, output_size, num_points=11):
     # get the state dicts
     state_dict1 = model1.state_dict()
     state_dict2 = model2.state_dict()
@@ -71,14 +71,14 @@ def interpolation_losses(model1, model2, loader, output_size, num_points=11):
         new_model.eval()
 
         # compute and store the loss
-        loss, _ = evaluate(new_model, loader, output_size)
+        loss, _ = evaluate(new_model, loader, criteria, output_size)
         losses[idx] = loss
 
     return losses
 
 
 # given ref model and model, return realigned model
-def weight_matching(ref_model, model, depth=3, layer_norm=False):
+def weight_matching(ref_model, model, depth=1, layer_norm=False):
     width = ref_model.layers[0].weight.shape[0]
     for _ in range(50):
         for l in range(depth):
@@ -138,8 +138,91 @@ def weight_matching(ref_model, model, depth=3, layer_norm=False):
             model.layers[
                 int((1 + int(layer_norm)) * (l + 1))
             ].weight = torch.nn.Parameter(
-                torch.matmul(model.layers[int(2 * (l + 1))].weight, perm.T)
+                torch.matmul(
+                    model.layers[int((1 + int(layer_norm)) * (l + 1))].weight, perm.T
+                )
             )
+
+    return model
+
+
+def weight_matching_polar(ref_model, model, depth="1", layer_norm=False):
+    """
+    FOR ONE HIDDEN LAYER ONLY & NO LAYER NORM
+    """
+    width = ref_model.layers[0].weight.shape[0]
+    # initialize cost
+    cost = torch.zeros((width, width)).to(device)
+
+    # compute theta of incoming weights
+    theta1 = torch.atan2(
+        ref_model.layers[0].weight[:, 1], ref_model.layers[0].weight[:, 0]
+    )  # range [-pi, pi]
+    theta2 = torch.atan2(
+        model.layers[0].weight[:, 1], model.layers[0].weight[:, 0]
+    )  # range [-pi, pi]
+    # cost as normalized difference between theta1 and theta2
+    cost_theta = torch.abs(theta1.unsqueeze(1) - theta2.unsqueeze(0))  # range [0, 2pi]
+    # wrap around
+    cost_theta = torch.where(
+        cost_theta > np.pi, 2 * np.pi - cost_theta, cost_theta
+    )  # range [0, pi]
+    # normalize
+    cost_theta = cost_theta / np.pi  # range [0, 1]
+
+    # compute norm of incoming weights
+    norm1 = torch.norm(ref_model.layers[0].weight, dim=1)  # range [0, inf)
+    norm2 = torch.norm(model.layers[0].weight, dim=1)  # range [0, inf)
+    # tanh to range [0, 1]
+    norm1 = torch.tanh(norm1)
+    norm2 = torch.tanh(norm2)
+    cost_norm = torch.abs(norm1.unsqueeze(1) - norm2.unsqueeze(0)) # range [0, 1]
+
+    # compute distance from origin
+    # avoid division by zero
+    dist1 = ref_model.layers[0].bias / (
+        norm1 + 1e-8
+    )  # range [-inf, inf] (negative for left of origin)
+    dist2 = model.layers[0].bias / (
+        norm2 + 1e-8
+    )  # range [-inf, inf] (negative for left of origin)
+    # tanh to range [-1, 1]
+    dist1 = torch.tanh(dist1)
+    dist2 = torch.tanh(dist2)
+    # cost as normalized difference between dist1 and dist2
+    cost_dist = torch.abs(dist1.unsqueeze(1) - dist2.unsqueeze(0)) / 2  # range [0, 1]
+
+    # output weight cost
+    cost_out = torch.abs(ref_model.layers[1].weight.T - model.layers[1].weight) / (
+        torch.max(ref_model.layers[1].weight) - torch.min(ref_model.layers[1].weight)
+    )  # range [0, 1]
+
+    # overwrite
+    # cost_theta = torch.zeros_like(cost_theta)
+    # cost_norm = torch.zeros_like(cost_norm)
+    # cost_dist = torch.zeros_like(cost_dist)
+    # cost_out = torch.zeros_like(cost_out)
+
+    # compute total cost
+    cost = (cost_theta + cost_norm + cost_dist + cost_out) / 4  # range [0, 1]
+
+    # get permutation using hungarian algorithm
+    row_ind, col_ind = linear_sum_assignment(
+        cost.detach().cpu().numpy(), maximize=False
+    )
+    perm = torch.zeros(cost.shape).to(device)
+    perm[row_ind, col_ind] = 1
+
+    # realign model
+    model.layers[0].weight = torch.nn.Parameter(
+        torch.matmul(perm, model.layers[0].weight)
+    )
+    model.layers[0].bias = torch.nn.Parameter(
+        torch.matmul(perm, model.layers[0].bias.unsqueeze(1)).squeeze()
+    )
+    model.layers[1].weight = torch.nn.Parameter(
+        torch.matmul(model.layers[1].weight, perm.T)
+    )
 
     return model
 

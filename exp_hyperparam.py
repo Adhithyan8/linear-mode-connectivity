@@ -8,7 +8,13 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, OneCycleLR
 from torch.utils.data import DataLoader, TensorDataset
 
 from architecture.MLP import MLP, train
-from utils import evaluate, interpolation_losses, weight_matching
+from utils import (
+    evaluate,
+    interpolation_losses,
+    weight_matching,
+    weight_matching_polar,
+    get_moons,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -18,24 +24,7 @@ depth = 1
 num_models = 40
 epochs = 100
 
-# load data from data/moons.npz
-file = np.load("data/moons.npz")
-X_train = file["X_train"]
-y_train = file["y_train"]
-X_test = file["X_test"]
-y_test = file["y_test"]
-
-# define train and test loaders
-train_loader = DataLoader(
-    TensorDataset(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float()),
-    batch_size=256,
-    shuffle=True,
-)
-test_loader = DataLoader(
-    TensorDataset(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float()),
-    batch_size=256,
-    shuffle=False,
-)
+train_loader, test_loader = get_moons()
 
 # training models with different initializations, optimizers
 inits = ["normal", "uniform"]
@@ -84,13 +73,13 @@ for init in inits:
             train_loss, train_acc = evaluate(
                 model,
                 train_loader,
-                criterion=binary_cross_entropy_with_logits,
+                criteria=binary_cross_entropy_with_logits,
                 output_size=1,
             )
             test_loss, test_acc = evaluate(
                 model,
                 test_loader,
-                criterion=binary_cross_entropy_with_logits,
+                criteria=binary_cross_entropy_with_logits,
                 output_size=1,
             )
             logs[f"{init}_{optim}_{i}"] = {
@@ -134,11 +123,11 @@ for init in inits:
                 torch.load(f"models/moons/model_{init}_{optim}_{i}.pth")
             )
             # realign the model
-            model = weight_matching(ref_model, model, depth=1, layer_norm=False)
+            model = weight_matching_polar(ref_model, model, depth=1, layer_norm=False)
             # save the model
             torch.save(
                 model.state_dict(),
-                f"models/moons/perm_model_{init}_{optim}_{i}.pth",
+                f"models/moons/perm_polar_model_{init}_{optim}_{i}.pth",
             )
 
 
@@ -161,20 +150,25 @@ for i in range(num_models):
             ).to(device)
             # load weights and bias
             model_i.load_state_dict(
-                torch.load(f"models/moons/perm_model_{keys[i]}.pth")
+                torch.load(f"models/moons/perm_polar_model_{keys[i]}.pth")
             )
             model_j.load_state_dict(
-                torch.load(f"models/moons/perm_model_{keys[j]}.pth")
+                torch.load(f"models/moons/perm_polar_model_{keys[j]}.pth")
             )
             # interpolate
             int_losses[i, j, :] = interpolation_losses(
-                model_i, model_j, test_loader, output_size=1, num_points=11
+                model_i,
+                model_j,
+                test_loader,
+                criteria=binary_cross_entropy_with_logits,
+                output_size=1,
+                num_points=11,
             )
-np.save("logs/moons/perm_int_losses_hyp", int_losses)
+np.save("logs/moons/perm_polar_int_losses_hyp", int_losses)
 
 
 # load and plot the results
-perm_int_losses = np.load("logs/moons/perm_int_losses_hyp.npy")
+perm_int_losses = np.load("logs/moons/perm_polar_int_losses_hyp.npy")
 # mean & std
 mean_int_losses = np.mean(perm_int_losses, axis=(0, 1))
 std_int_losses = np.std(perm_int_losses, axis=(0, 1))
@@ -216,7 +210,7 @@ plt.xlim(0, 1)
 plt.legend()
 plt.grid()
 plt.tight_layout()
-plt.savefig("perm_int_losses_hyp.png")
+plt.savefig("perm_polar_int_losses_hyp.png")
 plt.close()
 
 
@@ -227,7 +221,7 @@ sns.set_style("whitegrid")
 # visualize epsilon
 perm_epsilon_moons_hyp = np.zeros((num_models, num_models))
 
-int_losses = np.load(f"logs/moons/perm_int_losses_hyp.npy")
+int_losses = np.load(f"logs/moons/perm_polar_int_losses_hyp.npy")
 for j in range(int_losses.shape[0]):
     for k in range(int_losses.shape[1]):
         if j == k:
@@ -263,4 +257,4 @@ g.ax_col_dendrogram.set_visible(False)
 # hide the colorbar
 g.cax.set_visible(False)
 # save the figure
-g.savefig(f"perm_sim_moons_hyp.png", dpi=600, bbox_inches="tight")
+g.savefig(f"perm_polar_sim_moons_hyp.png", dpi=600, bbox_inches="tight")
