@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from matplotlib import cm, colors
 from torch.nn.functional import binary_cross_entropy_with_logits
+from utils import get_moons
 
 from architecture.MLP import MLP
 
@@ -52,18 +53,17 @@ def get_plane(v0, v1, v2):
 
 
 # config
-width = None
+width = 32
 # Load data
-train_loader = None
-test_loader = None
+train_loader, test_loader = get_moons()
 logs = None
 
 # choose 3 random indices from 0 to 50
 indices = np.zeros(3, dtype=np.int)
 # replace
-indices[0] = 47
-indices[1] = 46
-indices[2] = 17
+indices[0] = 0
+indices[1] = 10
+indices[2] = 40
 
 # reference
 ref_idx = 0
@@ -73,7 +73,9 @@ model0 = MLP(2, width, 1, 1, False)
 model1 = MLP(2, width, 1, 1, False)
 model2 = MLP(2, width, 1, 1, False)
 # load weights
-# TODO
+model0.load_state_dict(torch.load(f"models/moons/model_w{width}_{indices[0]}.pth"))
+model1.load_state_dict(torch.load(f"models/moons/model_w{width}_{indices[1]}.pth"))
+model2.load_state_dict(torch.load(f"models/moons/model_w{width}_{indices[2]}.pth"))
 
 # convert models to vectors
 vec0 = model2vec(model0)
@@ -92,7 +94,28 @@ y_mid = ynorm / 3
 x_min, x_max = x_mid - xnorm, x_mid + xnorm
 y_min, y_max = y_mid - ynorm, y_mid + ynorm
 
-xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.5), np.arange(y_min, y_max, 0.5))
+# # load permuted models
+# model1.load_state_dict(torch.load(f"models/moons/perm_model_w{width}_{indices[1]}.pth"))
+# model2.load_state_dict(torch.load(f"models/moons/perm_model_w{width}_{indices[2]}.pth"))
+
+# # convert models to vectors
+# vec0 = model2vec(model0)
+# vec1 = model2vec(model1)
+# vec2 = model2vec(model2)
+# origin, x, y, d = get_plane(vec0, vec1, vec2)
+
+# xhat = x / torch.norm(x)
+# yhat = y / torch.norm(y)
+# xnorm_ = torch.norm(x).item()
+# ynorm_ = torch.norm(y).item()
+# dnorm_ = d.item()
+
+# x_mid = (dnorm_ + xnorm_) / 3
+# y_mid = ynorm_ / 3
+# x_min, x_max = x_mid - (2/3)*xnorm, x_mid + (3/3)*xnorm
+# y_min, y_max = y_mid - (2/3)*ynorm, y_mid + (3/3)*ynorm
+
+xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.2), np.arange(y_min, y_max, 0.2))
 grid = torch.from_numpy(np.c_[xx.ravel(), yy.ravel()]).float().to(device)
 
 # model at grid[i, j] is model2vec(vec0 + i * x + j * y)
@@ -176,7 +199,6 @@ plt.text(
     verticalalignment="center",
 )
 
-plt.title("Loss surface (naive)")
 plt.xticks([])
 plt.yticks([])
 plt.gca().set_aspect("equal")

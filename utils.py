@@ -176,7 +176,7 @@ def weight_matching_polar(ref_model, model, depth="1", layer_norm=False):
     # tanh to range [0, 1]
     norm1 = torch.tanh(norm1)
     norm2 = torch.tanh(norm2)
-    cost_norm = torch.abs(norm1.unsqueeze(1) - norm2.unsqueeze(0)) # range [0, 1]
+    cost_norm = torch.abs(norm1.unsqueeze(1) - norm2.unsqueeze(0))  # range [0, 1]
 
     # compute distance from origin
     # avoid division by zero
@@ -193,8 +193,15 @@ def weight_matching_polar(ref_model, model, depth="1", layer_norm=False):
     cost_dist = torch.abs(dist1.unsqueeze(1) - dist2.unsqueeze(0)) / 2  # range [0, 1]
 
     # output weight cost
-    cost_out = torch.abs(ref_model.layers[1].weight.T - model.layers[1].weight) / (
-        torch.max(ref_model.layers[1].weight) - torch.min(ref_model.layers[1].weight)
+    # cost_out = torch.abs(ref_model.layers[1].weight.T - model.layers[1].weight) / (
+    #     torch.max(ref_model.layers[1].weight) - torch.min(ref_model.layers[1].weight)
+    # )  # range [0, 1]
+    cost_out = (
+        torch.abs(
+            torch.tanh(ref_model.layers[1].weight.T)
+            - torch.tanh(model.layers[1].weight)
+        )
+        / 2
     )  # range [0, 1]
 
     # overwrite
@@ -428,6 +435,49 @@ def get_mnist():
             train=False,
             transform=transforms.Compose(
                 [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+            ),
+        ),
+        batch_size=256,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+    )
+    return train_loader, test_loader
+
+
+def get_cifar10():
+    train_loader = DataLoader(
+        datasets.CIFAR10(
+            "data",
+            train=True,
+            download=True,
+            transform=transforms.Compose(
+                [
+                    # auto augmentation
+                    transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
+                    ),
+                ]
+            ),
+        ),
+        batch_size=256,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+    )
+    test_loader = DataLoader(
+        datasets.CIFAR10(
+            "data",
+            train=False,
+            transform=transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
+                    ),
+                ]
             ),
         ),
         batch_size=256,

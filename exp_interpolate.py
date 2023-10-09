@@ -11,10 +11,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 widths = [2, 4, 8, 16, 32, 64, 128, 256, 512]
 num_models = 50
 depth = 3
-epochs = 60
+epochs = 100
 
 # load data
-# train_loader, test_loader = get_moons()
 train_loader, test_loader = get_mnist()
 
 # train and evaluate models
@@ -109,86 +108,100 @@ for width in widths:
         int_losses,
     )
 
-
-# visualize naive interpolation losses
-for i, width in enumerate(widths):
-    fig, axes = plt.subplots(1, 1, figsize=(5, 5))
-    int_losses = np.load(f"logs/mnist/perm_int_losses_test_w{width}.npy")
-
-    # compute mean values (average across dim 0 and 1)
-    int_losses_mean = int_losses.mean(axis=(0, 1))
-
-    # compute standard deviations (average across dim 0 and 1)
-    int_losses_std = int_losses.std(axis=(0, 1))
-
-    # plot individual losses as lines in same subplot
-    for j in range(int_losses.shape[0]):
-        for k in range(int_losses.shape[1]):
-            # plot individual losses as lines in same subplot
-            axes.plot(int_losses[j, k], linewidth=0.5, color="grey", alpha=0.1)
-    # plot mean as line in same subplot
-    axes.plot(int_losses_mean, color="red", linewidth=2, label="mean")
-    # show standard deviation as lines around mean
-    axes.plot(
-        int_losses_mean + int_losses_std,
-        color="red",
-        linewidth=1,
-        linestyle="--",
-    )
-    axes.plot(
-        int_losses_mean - int_losses_std,
-        color="red",
-        linewidth=1,
-        linestyle="--",
-    )
-
-    axes.set_xlabel("$\\alpha$")
-    axes.set_ylabel("test loss")
-    axes.set_xlim(0, 10)
-    axes.set_title(f"width {width}")
-    axes.grid()
-    axes.legend()
-    fig.tight_layout()
-    plt.savefig(f"perm_interpolation_losses_test_w{width}.png", dpi=600)
-    plt.close()
-
-
 import seaborn as sns
 
 # whitegrid
 sns.set_style("whitegrid")
 
-# visualize epsilon
-epsilon = np.zeros((int((50 * 49) / 2), len(widths)))
+fig, axes = plt.subplots(2, 2, figsize=(8, 8))
+axes = axes.flatten()
+# visualize naive interpolation losses
 for i, width in enumerate(widths):
-    int_losses = np.load(f"logs/mnist/perm_int_losses_test_w{width}.npy")
+    int_losses = np.load(f"logs/moons/naive_int_losses_test_w{width}.npy")
+
+    # compute the interquartiles
+    q1 = np.quantile(int_losses, 0.25, axis=(0, 1))
+    q2 = np.quantile(int_losses, 0.5, axis=(0, 1))
+    q3 = np.quantile(int_losses, 0.75, axis=(0, 1))
+
+    # plot individual losses as lines in same subplot
+    for j in range(int_losses.shape[0]):
+        for k in range(int_losses.shape[1]):
+            # plot individual losses as lines in same subplot
+            axes[i].plot(int_losses[j, k], linewidth=0.5, color="grey", alpha=0.1)
+
+    # plot interquartiles as lines in same subplot
+    axes[i].plot(q1, color="red", linewidth=1, linestyle="--")
+    axes[i].plot(q2, color="red", linewidth=2, label="median")
+    axes[i].plot(q3, color="red", linewidth=1, linestyle="--")
+
+    axes[i].set_xlabel("$\\alpha$")
+    axes[i].set_xlim(0, 10)
+    axes[i].set_xticklabels([0, 0.2, 0.4, 0.6, 0.8, 1])
+    axes[i].set_ylabel("Test loss")
+    axes[i].set_title(f"Hidden layer width {width}")
+fig.tight_layout()
+plt.savefig(f"moons_naive_interpolation_losses_test.png", dpi=600)
+plt.close()
+
+# naive epsilon
+epsilon_naive_moons = np.zeros((int((50 * 49) / 2), len(widths)))
+for i, width in enumerate(widths):
+    int_losses = np.load(f"logs/moons/naive_int_losses_test_w{width}.npy")
     idx = 0
     for j in range(int_losses.shape[0]):
         for k in range(int_losses.shape[1]):
             if j < k:
-                epsilon[idx, i] = int_losses[j, k, :].max() - max(
+                epsilon_naive_moons[idx, i] = int_losses[j, k, :].max() - max(
                     int_losses[j, k, 0], int_losses[j, k, -1]
                 )
                 idx += 1
 
-# y axis is 1D vector of epsilon values
-epsilon = epsilon.T.flatten()
-# x axis is 1D vector of widths
-widths = np.repeat(widths, int((11 * 10) / 2))
-# log scale
-widths = np.log2(widths)
-# violin plot
-sns.violinplot(
-    x=widths,
-    y=epsilon,
-    cut=0,
-    inner="box",
-    scale="width",
-    color="C2",
+# perm epsilon
+epsilon_perm_moons = np.zeros((int((50 * 49) / 2), len(widths)))
+for i, width in enumerate(widths):
+    int_losses = np.load(f"logs/moons/reduced_int_losses_test_w{width}.npy")
+    idx = 0
+    for j in range(int_losses.shape[0]):
+        for k in range(int_losses.shape[1]):
+            if j < k:
+                epsilon_perm_moons[idx, i] = int_losses[j, k, :].max() - max(
+                    int_losses[j, k, 0], int_losses[j, k, -1]
+                )
+                idx += 1
+
+# plot moons
+eps = np.concatenate((epsilon_naive_moons.T.flatten(), epsilon_perm_moons.T.flatten()))
+ws = np.concatenate(
+    (
+        np.repeat(widths, int((50 * 49) / 2)),
+        np.repeat(widths, int((50 * 49) / 2)),
+    )
 )
-# set x axis label
+ws = np.log2(ws)
+hue = np.concatenate(
+    (
+        np.repeat("Full", int((50 * 49) * 9 / 2)),
+        np.repeat("Reduced", int((50 * 49) * 9 / 2)),
+    )
+)
+
+# boxplot
+fig, ax = plt.subplots(figsize=(6, 4))
+sns.violinplot(
+    x=ws,
+    y=eps,
+    hue=hue,
+    split=True,
+    inner="quartile",
+    cut=0,
+    scale="width",
+    palette=["C0", "C3"],
+)
+plt.legend()
+plt.xticks(np.arange(0, 9, 1), labels=widths)
 plt.xlabel("Hidden layer width")
 plt.ylabel("$\\epsilon$")
 plt.tight_layout()
-plt.savefig(f"perm_epsilon.png", dpi=600)
+plt.savefig(f"compare_epsilon_reduced.png", dpi=600)
 plt.close()

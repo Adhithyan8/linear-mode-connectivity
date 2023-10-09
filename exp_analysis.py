@@ -111,32 +111,36 @@ train_loader, test_loader = get_mnist()
 # whitegrid
 sns.set_theme(style="whitegrid")
 
+widths = [512]
+
 # visualize epsilon after clustering
-perm_epsilon_mnist = np.zeros((11, 11, len(widths)))
+perm_epsilon_moons = np.zeros((50, 50, len(widths)))
 for i, width in enumerate(widths):
-    int_losses = np.load(f"logs/mnist/naive_int_losses_test_swa_w{width}.npy")
+    int_losses = np.load(f"logs/moons/perm_int_losses_test_w{width}.npy")
     for j in range(int_losses.shape[0]):
         for k in range(int_losses.shape[1]):
             if j > k:
-                perm_epsilon_mnist[j, k, i] = perm_epsilon_mnist[k, j, i]
+                perm_epsilon_moons[j, k, i] = perm_epsilon_moons[k, j, i]
             if j < k:
-                perm_epsilon_mnist[j, k, i] = int_losses[j, k, :].max() - max(
+                perm_epsilon_moons[j, k, i] = int_losses[j, k, :].max() - max(
                     int_losses[j, k, 0], int_losses[j, k, -1]
                 )
 
 for i, width in enumerate(widths):
     g = sns.clustermap(
-        perm_epsilon_mnist[:, :, i],
+        perm_epsilon_moons[:, :, i],
         cmap="rocket",
         vmin=0,
-        # vmax=0.1,
+        vmax=0.111,
         # only show x tick label of 0
         xticklabels=[0] + [""] * 49,
         yticklabels=[0] + [""] * 49,
-        row_cluster=False,
-        col_cluster=False,
+        row_cluster=True,
+        col_cluster=True,
         figsize=(8, 8),
         cbar_kws={"label": "$\epsilon$"},
+        cbar_pos=(0.02, 0.075, 0.05, 0.8),
+        dendrogram_ratio=(0.15, 0.1),
         metric="euclidean",
         method="single",
     )
@@ -146,7 +150,7 @@ for i, width in enumerate(widths):
     # hide the colorbar
     g.cax.set_visible(True)
     # save the figure
-    g.savefig(f"swa_sim_mnist_w{width}.png", dpi=600, bbox_inches="tight")
+    g.savefig(f"eps_mnist_w{width}.png", dpi=600, bbox_inches="tight")
 
 
 # Lets see if SWA averages are equivalent naive or aligned averaging
