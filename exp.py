@@ -264,3 +264,39 @@ cb1 = colorbar.ColorbarBase(
     ax, cmap="rocket", norm=norm, orientation="vertical", label="$\epsilon$",
 )
 fig.savefig("rocket_cbar_cifar_hyp.png", dpi=600, bbox_inches="tight")
+
+
+# compute the norm of the parameters
+plt.figure(figsize=(6, 6))
+
+# initialize the model
+model = MLP(3 * 32 * 32, 512, 3, 10, True).to(device)
+norms = np.zeros((10, 4))
+optims = ["AdamW", "SGD", "RMSprop", "Adagrad"]
+for optim in optims:
+    for i in range(10):
+        # load weights and bias
+        model.load_state_dict(torch.load(f"models/cifar/model_{optim}_{i}.pth"))
+        # compute the norm of the parameters
+        param_vector = torch.tensor([]).to(device)
+        for param in model.parameters():
+            param_vector = torch.cat((param_vector, param.flatten()))
+
+        norms[i, optims.index(optim)] = param_vector.norm(p=float("Inf")).item()
+
+# plot stds
+plt.bar(
+    np.arange(4),
+    norms.mean(axis=0),
+    yerr=norms.std(axis=0),
+    color="grey",
+    edgecolor="black",
+    linewidth=1,
+    alpha=0.5,
+)
+plt.ylabel("Mean")
+plt.xticks(np.arange(4), optims)
+plt.title("$L_{\infty}$ norm - parameters")
+plt.tight_layout()
+plt.savefig("Linf_norms_cifar_hyp.png")
+plt.close()
