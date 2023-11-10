@@ -6,7 +6,13 @@ from matplotlib import colorbar
 from matplotlib.colors import Normalize
 
 from architecture.MLP import MLP, train
-from utils import get_cifar10, evaluate, weight_matching, interpolation_losses
+from utils import (
+    get_cifar10,
+    evaluate,
+    weight_matching,
+    weight_matching_test,
+    interpolation_losses,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

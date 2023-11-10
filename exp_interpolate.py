@@ -3,7 +3,14 @@ import numpy as np
 import torch
 
 from architecture.MLP import MLP, train
-from utils import evaluate, get_mnist, get_moons, interpolation_losses, weight_matching
+from utils import (
+    evaluate,
+    get_mnist,
+    get_moons,
+    interpolation_losses,
+    weight_matching,
+    weight_matching_test,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -11,7 +18,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 widths = [2, 4, 8, 16, 32, 64, 128, 256, 512]
 num_models = 50
 depth = 3
-epochs = 100
+epochs = 60
 
 # load data
 train_loader, test_loader = get_mnist()
@@ -60,12 +67,14 @@ for w in widths:
     ref_model.load_state_dict(torch.load(f"models/mnist/model_w{w}_0.pth"))
     ref_model.eval()
 
-    for i in range(1, num_models):
+    for i in range(num_models):
         model = MLP(784, w, depth, 10, layer_norm=True).to(device)
         model.load_state_dict(torch.load(f"models/mnist/model_w{w}_{i}.pth"))
         model.eval()
 
-        model = weight_matching(ref_model, model, depth=depth, layer_norm=True)
+        model, swaps = weight_matching_test(
+            ref_model, model, depth=depth, layer_norm=True
+        )
         torch.save(model.state_dict(), f"models/mnist/perm_model_w{w}_{i}.pth")
 
 
@@ -101,7 +110,13 @@ for width in widths:
                 model_j.load_state_dict(
                     torch.load(f"models/mnist/perm_model_w{width}_{j}.pth")
                 )
-                int_losses[i, j, :] = interpolation_losses(model_i, model_j, loader)
+                int_losses[i, j, :] = interpolation_losses(
+                    model_i,
+                    model_j,
+                    loader,
+                    criteria=torch.nn.functional.cross_entropy,
+                    output_size=10,
+                )
 
     np.save(
         f"logs/mnist/perm_int_losses_test_w{width}",

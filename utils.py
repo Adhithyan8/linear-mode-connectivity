@@ -80,7 +80,14 @@ def interpolation_losses(model1, model2, loader, criteria, output_size, num_poin
 # given ref model and model, return realigned model
 def weight_matching(ref_model, model, depth=1, layer_norm=False):
     width = ref_model.layers[0].weight.shape[0]
-    for _ in range(50):
+    # keep track of number of swaps in every iteration
+    swaps = []
+    if depth == 1:
+        num_iters = 1
+    else:
+        num_iters = 50
+    for _ in range(num_iters):
+        count = 0
         for l in range(depth):
             # compute cost
             cost = torch.zeros((width, width)).to(device)
@@ -115,6 +122,9 @@ def weight_matching(ref_model, model, depth=1, layer_norm=False):
             perm = torch.zeros(cost.shape).to(device)
             perm[row_ind, col_ind] = 1
 
+            # how much does perm differ from identity
+            count += torch.abs((perm - torch.eye(width).to(device))).sum().item() / 2
+
             # realign model
             model.layers[int((1 + int(layer_norm)) * l)].weight = torch.nn.Parameter(
                 torch.matmul(perm, model.layers[int(2 * l)].weight)
@@ -142,8 +152,125 @@ def weight_matching(ref_model, model, depth=1, layer_norm=False):
                     model.layers[int((1 + int(layer_norm)) * (l + 1))].weight, perm.T
                 )
             )
+        if count == 0:
+            break
+        swaps.append(count)
 
-    return model
+    return model, swaps
+
+
+# given ref model and model, return realigned model
+def weight_matching_test(ref_model, model, depth=1, layer_norm=False):
+    width = ref_model.layers[0].weight.shape[0]
+    # keep track of number of swaps in every iteration
+    swaps = []
+    if depth == 1:
+        num_iters = 1
+    else:
+        num_iters = 50
+    for _ in range(num_iters):
+        count = 0
+        for l in range(depth):
+            # compute cost
+            cost = torch.zeros((width, width)).to(device)
+
+            if layer_norm:
+                cost += torch.matmul(
+                    torch.mul(
+                        ref_model.layers[int(2 * l + 1)].weight.unsqueeze(1),
+                        ref_model.layers[int(2 * l)].weight,
+                    ),
+                    torch.mul(
+                        model.layers[int(2 * l + 1)].weight.unsqueeze(0),
+                        model.layers[int(2 * l)].weight.T,
+                    ),
+                )
+                cost += torch.matmul(
+                    ref_model.layers[int(2 * l + 1)].bias.unsqueeze(1)
+                    + torch.mul(
+                        ref_model.layers[int(2 * l + 1)].weight.unsqueeze(1),
+                        ref_model.layers[int(2 * l)].bias.unsqueeze(1),
+                    ),
+                    model.layers[int(2 * l + 1)].bias.unsqueeze(0)
+                    + torch.mul(
+                        model.layers[int(2 * l + 1)].weight.unsqueeze(0),
+                        model.layers[int(2 * l)].bias.unsqueeze(0),
+                    ),
+                )
+            else:
+                cost += torch.matmul(
+                    ref_model.layers[int(l)].weight,
+                    model.layers[int(l)].weight.T,
+                )
+                cost += torch.matmul(
+                    ref_model.layers[int(l)].bias.unsqueeze(1),
+                    model.layers[int(l)].bias.unsqueeze(0),
+                )
+            # next layer
+            if layer_norm and l < depth - 1:
+                cost += torch.matmul(
+                    torch.mul(
+                        ref_model.layers[int(2 * (l + 1) + 1)].weight.unsqueeze(0),
+                        ref_model.layers[int(2 * (l + 1))].weight.T,
+                    ),
+                    torch.mul(
+                        model.layers[int(2 * (l + 1) + 1)].weight.unsqueeze(1),
+                        model.layers[int(2 * (l + 1))].weight,
+                    ),
+                )
+            elif layer_norm and l == depth - 1:
+                cost += torch.matmul(
+                    ref_model.layers[int(2 * (l + 1))].weight.T,
+                    model.layers[int(2 * (l + 1))].weight,
+                )
+            else:
+                cost += torch.matmul(
+                    ref_model.layers[int((l + 1))].weight.T,
+                    model.layers[int((l + 1))].weight,
+                )
+
+            # get permutation using hungarian algorithm
+            row_ind, col_ind = linear_sum_assignment(
+                cost.cpu().detach().numpy(), maximize=True
+            )
+            perm = torch.zeros(cost.shape).to(device)
+            perm[row_ind, col_ind] = 1
+
+            # how much does perm differ from identity
+            count += torch.abs((perm - torch.eye(width).to(device))).sum().item() / 2
+
+            # realign model
+            model.layers[int((1 + int(layer_norm)) * l)].weight = torch.nn.Parameter(
+                torch.matmul(perm, model.layers[int(2 * l)].weight)
+            )
+            model.layers[int((1 + int(layer_norm)) * l)].bias = torch.nn.Parameter(
+                torch.matmul(perm, model.layers[int(2 * l)].bias.unsqueeze(1)).squeeze()
+            )
+            # change layer norm just like bias
+            if layer_norm:
+                model.layers[int(2 * l + 1)].weight = torch.nn.Parameter(
+                    torch.matmul(
+                        perm, model.layers[int(2 * l + 1)].weight.unsqueeze(1)
+                    ).squeeze()
+                )
+                model.layers[int(2 * l + 1)].bias = torch.nn.Parameter(
+                    torch.matmul(
+                        perm, model.layers[int(2 * l + 1)].bias.unsqueeze(1)
+                    ).squeeze()
+                )
+            # next layer
+            model.layers[
+                int((1 + int(layer_norm)) * (l + 1))
+            ].weight = torch.nn.Parameter(
+                torch.matmul(
+                    model.layers[int((1 + int(layer_norm)) * (l + 1))].weight, perm.T
+                )
+            )
+        if count == 0:
+            break
+        swaps.append(count)
+
+    return model, swaps
 
 
 def weight_matching_polar(ref_model, model, depth="1", layer_norm=False):
