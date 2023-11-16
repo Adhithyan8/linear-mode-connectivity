@@ -613,3 +613,21 @@ def get_cifar10():
         pin_memory=True,
     )
     return train_loader, test_loader
+
+
+def get_disagreement(model1, model2, loader):
+    # get the disagreement
+    disagreement = 0
+    for X, y in loader:
+        X = X.to(device)
+        y = y.to(device)
+        # get the logits
+        logits1 = model1(X)
+        logits2 = model2(X)
+        # get the predictions
+        preds1 = torch.argmax(logits1, dim=1)
+        preds2 = torch.argmax(logits2, dim=1)
+        # get the disagreement
+        disagreement += torch.sum(preds1 != preds2).item()
+
+    return disagreement / len(loader.dataset)
